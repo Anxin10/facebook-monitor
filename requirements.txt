@@ -1,0 +1,30 @@
+# Facebook 監控系統依賴
+
+# 核心框架
+schedule==1.2.2
+
+# Facebook Graph API
+facebook-sdk==21.0.0
+requests==2.32.3
+
+# 資料庫
+sqlite3  # Python 內建
+
+# 設定檔處理
+PyYAML==6.0.2
+
+# 環境變數管理
+python-dotenv==1.0.1
+
+# 瀏覽器自動化（限動讀取，可選）
+playwright==1.49.0
+
+# 通知管道（依需求選擇安裝）
+# telegram-bot==0.0.1  # Telegram
+# requests  # LINE Notify / Email
+
+# 日誌
+python-json-logger==2.0.7
+
+# 工具
+python-dateutil==2.9.0.post0

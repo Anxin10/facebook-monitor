@@ -1,0 +1,66 @@
+# Facebook 監控系統設定檔
+# 詳細說明請參閱設計文件 facebook-monitor-design.md
+
+# 監控目標清單
+targets:
+  - page_id: "100054441671873"
+    url: "https://www.facebook.com/profile.php?id=100054441671873"
+    account_type: "page_assumed"  # 假設為粉絲專頁，待實際驗證
+    enabled: true
+    # 可新增更多目標...
+
+# 貼文監控設定
+posts:
+  source: "graph_api"  # 使用官方 API
+  interval_seconds: 600  # 10 分鐘檢查一次
+  author_filter: "target_page_only"  # 只監控指定粉專發布的貼文
+  max_pages: 5  # API 分頁上限，避免過度請求
+
+# 限時動態設定（待驗證後啟用）
+stories:
+  enabled: false  # 完成資料來源驗證後才啟用
+  source: "pending_validation"  # 待驗證
+  interval_seconds: 300  # 5 分鐘檢查一次
+  # source 選項："graph_api" | "browser" | "pending_validation"
+
+# 資料儲存設定
+storage:
+  database: "monitor.sqlite3"  # SQLite 資料庫檔案
+  download_media: false  # 不預設下載圖片或影片
+  max_items_retention_days: 365  # 保留內容天數，0 表示永久
+
+# 通知設定
+notifications:
+  channel: "pending_selection"  # 待選："line" | "telegram" | "email" | "desktop" | "none"
+  notify_existing_on_first_run: false  # 首次執行不通知既有內容
+  notify_post_edits: false  # 舊貼文編輯不觸發通知
+  timezone: "Asia/Taipei"  # 通知顯示時區
+  
+  # LINE 通知設定（若使用）
+  line:
+    enabled: false
+    # webhook_url 請從 .env 載入
+  
+  # Telegram 通知設定（若使用）
+  telegram:
+    enabled: false
+    # bot_token 與 chat_id 請從 .env 載入
+  
+  # Email 通知設定（若使用）
+  email:
+    enabled: false
+    # smtp 設定與收件者請從 .env 載入
+
+# 日誌設定
+logging:
+  level: "INFO"  # DEBUG | INFO | WARNING | ERROR
+  file: "monitor.log"
+  max_size_mb: 10
+  backup_count: 3
+
+# 執行環境設定
+runtime:
+  max_concurrent_fetchers: 3  # 最大並行讀取數
+  retry_max_attempts: 5  # 失敗重試最大次數
+  retry_base_delay_seconds: 30  # 重試基礎延遲
+  respect_rate_limit: true  # 尊重 API 限流提示
