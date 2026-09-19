@@ -18,6 +18,7 @@
 import os
 import sys
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -351,7 +352,6 @@ class APIValidator:
     
     def run_all_tests(self):
         """執行所有測試"""
-        import logging
         logging.basicConfig(
             level=logging.INFO,
             format='%(message)s'
