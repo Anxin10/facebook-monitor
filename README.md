@@ -9,6 +9,7 @@ Python 實作的 Facebook 粉絲專頁貼文監控工具，使用官方 Graph AP
 - **SQLite 儲存**: 輕量級資料庫，無需額外服務
 - **智能排程**: 可自訂檢查間隔，支援秒數精度
 - **重試機制**: 通知失敗自動重試，指數退避
+- **完整測試**: 30+ 項離線測試確保程式碼正確性
 
 ## 快速開始
 
@@ -72,6 +73,26 @@ notifications:
 python main.py
 ```
 
+## 測試
+
+### 執行離線測試
+
+```bash
+# 使用測試運行腳本
+python run_tests.py
+
+# 或使用 unittest
+python -m unittest discover -s tests -v
+```
+
+### 測試涵蓋
+
+- **資料庫測試**（12 項）: 資料儲存、去重、分頁、通知管理
+- **貼文讀取器測試**（11 項）: API 呼叫、作者篩選、錯誤處理
+- **通知模組測試**（7 項）: Apprise、LINE、重試機制
+
+詳細測試指南請參閱 [TESTING.md](TESTING.md)
+
 ## 技術架構
 
 詳細技術決策與實作說明請參閱 [HYBRID_INTEGRATION.md](HYBRID_INTEGRATION.md)
@@ -84,11 +105,23 @@ python main.py
 - `src/scheduler.py`: 排程器
 - `src/config.py`: 設定管理
 
+### 測試模組
+
+- `tests/test_database.py`: 資料庫測試
+- `tests/test_post_fetcher.py`: 貼文讀取器測試
+- `tests/test_notifier.py`: 通知模組測試
+
 ## 已知限制
 
 - 限時動態功能尚未實作
 - 單一進程運行，不支援多實例並行
 - 需自行處理 Facebook API 權限與限流
+
+## 文件
+
+- [HYBRID_INTEGRATION.md](HYBRID_INTEGRATION.md) - 技術決策與實作說明
+- [TESTING.md](TESTING.md) - 測試與驗證指南
+- [config.yaml](config.yaml) - 設定檔範例
 
 ## 授權
 
