@@ -4,7 +4,7 @@ v0.2 核心修正：
 - 使用 /{page_id}/posts 端點（非 /feed），直接取得粉專發布的貼文
 - 真實 cursor pagination（paging.cursors.after）
 - 可配置 API version（預設 v26.0）
-- incomplete fetch = no commit
+- incomplete fetch = no commit（含 max_pages）
 - 首次基準不 spam（notify_existing_on_first_run）
 - 統一的 Page token 處理
 """
@@ -98,7 +98,12 @@ class GraphClient:
     def get_retry_after(self, exception: requests.HTTPError) -> Optional[int]:
         """取得 Retry-After 秒數"""
         if hasattr(exception, 'response') and exception.response:
-            return exception.response.headers.get('Retry-After')
+            header = exception.response.headers.get('Retry-After')
+            if header:
+                try:
+                    return int(header)
+                except ValueError:
+                    pass
         return None
 
 
@@ -108,7 +113,7 @@ class PostFetcher:
     v0.2 核心修正版本：
     - 使用 /{page_id}/posts 端點
     - 真實 cursor pagination
-    - incomplete fetch = no commit
+    - incomplete fetch = no commit（含 max_pages）
     - 首次基準不 spam
     """
     
@@ -209,6 +214,16 @@ class PostFetcher:
                 )
                 return []
             
+            # max_pages incomplete 也不提交
+            if pagination_incomplete:
+                self.logger.warning("分頁未完成，不提交本次結果")
+                update_check_status(
+                    self.db_path, page_id, 'post',
+                    'incomplete', 'max_pages', '達到分頁上限',
+                    pagination_incomplete=True
+                )
+                return []
+            
             if not posts:
                 # 空列表視為成功（無新貼文）
                 self.logger.info(f"粉專 {page_id} 無新貼文")
@@ -253,7 +268,7 @@ class PostFetcher:
             # 若有新貼文，批次保存
             if new_posts:
                 success = self._save_new_posts(
-                    page_id, new_posts, baseline_ready, pagination_incomplete
+                    page_id, new_posts, baseline_ready, pagination_incomplete=False
                 )
                 
                 if not success:
@@ -263,7 +278,7 @@ class PostFetcher:
                 # 無新貼文，只更新檢查狀態
                 update_check_status(
                     self.db_path, page_id, 'post',
-                    'success', None, None, pagination_incomplete
+                    'success', None, None, pagination_incomplete=False
                 )
             
             # 首次成功後標記基準已建立
@@ -332,6 +347,7 @@ class PostFetcher:
                 cursors = paging.get('cursors', {})
                 
                 if not paging.get('next'):
+                    # 沒有更多分頁，完成
                     break
                 
                 # 使用 cursors.after 作為下一頁的游標
@@ -343,7 +359,7 @@ class PostFetcher:
                 page_count += 1
                 self.logger.debug(f"分頁 {page_count}，取得 {len(data['data'])} 則貼文")
             
-            # 檢查是否達到 max_pages 限制
+            # 檢查是否達到 max_pages 限制且還有更多分頁
             if page_count >= self.max_pages:
                 if paging.get('next'):
                     pagination_incomplete = True
