@@ -7,6 +7,7 @@ LINE 支援冪等重試（idempotent retry）。
 """
 
 import os
+import uuid
 import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
@@ -179,8 +180,10 @@ class Notifier:
         """透過 LINE Messaging API 發送通知
         
         支援冪等重試（idempotent retry）：
-        - LINE API 在重複發送相同訊息時返回 is_duplicate: true
-        - 正確處理這種情況，視為成功並保存 requestId
+        - 使用 UUID 作為 X-Line-Retry-Key
+        - 從資料庫讀取已存儲的 retry_key（重試時沿用）
+        - 409 衝突視為已成功接受
+        - timeout/5xx 時沿用相同 UUID 重試
         """
         import requests
         
@@ -216,10 +219,20 @@ class Notifier:
                 }]
             }
             
+            # 從資料庫讀取已存儲的 retry_key（重試時沿用）
+            retry_key = notification.get('retry_key')
+            
+            # 如果沒有 retry_key，生成新的 UUID
+            if not retry_key:
+                retry_key = str(uuid.uuid4())
+            
+            # 加入 X-Line-Retry-Key header
+            headers['X-Line-Retry-Key'] = retry_key
+            
             try:
                 response = requests.post(url, json=payload, headers=headers, timeout=10)
                 
-                # LINE API 成功時返回 200 與 responseId
+                # LINE API 成功時返回 200 與 requestId
                 if response.status_code == 200:
                     response_data = response.json()
                     
@@ -227,7 +240,7 @@ class Notifier:
                     statuses = response_data.get('statuses', [])
                     if statuses:
                         status = statuses[0]
-                        retry_key = status.get('requestId')
+                        line_request_id = status.get('requestId')
                         is_duplicate = status.get('is_duplicate', False)
                         
                         if is_duplicate:
@@ -239,21 +252,43 @@ class Notifier:
                                 f"LINE 通知發送成功：{notification.get('content_id')}"
                             )
                         
-                        # 無論是否重複，都視為成功
+                        # 無論是否重複，都視為成功，保存 requestId
                         update_notification_status(
                             self.db_path, notification['id'], 'sent',
-                            retry_key=retry_key
+                            retry_key=line_request_id or retry_key
                         )
                     else:
                         # 舊格式回應
-                        retry_key = response_data.get('responseId')
+                        line_request_id = response_data.get('responseId')
                         self.logger.info(
                             f"LINE 通知發送成功：{notification.get('content_id')}"
                         )
                         update_notification_status(
                             self.db_path, notification['id'], 'sent',
-                            retry_key=retry_key
+                            retry_key=line_request_id or retry_key
                         )
+                
+                # 409 衝突視為已成功接受（冪等）
+                elif response.status_code == 409:
+                    self.logger.info(
+                        f"LINE 通知 409 衝突（視為成功）：{notification.get('content_id')}"
+                    )
+                    update_notification_status(
+                        self.db_path, notification['id'], 'sent',
+                        retry_key=retry_key
+                    )
+                
+                # 5xx 伺服器錯誤：保存 retry_key 以便重試沿用
+                elif 500 <= response.status_code < 600:
+                    error_msg = f"LINE API 5xx 錯誤：{response.status_code}: {response.text}"
+                    self.logger.warning(f"LINE 通知伺服器錯誤：{error_msg}")
+                    update_notification_status(
+                        self.db_path, notification['id'], 'pending',
+                        f"5xx 伺服器錯誤：{response.text}",
+                        retry_key=retry_key
+                    )
+                
+                # 其他錯誤
                 else:
                     error_msg = f"LINE API 返回 {response.status_code}: {response.text}"
                     self.logger.error(f"LINE 通知發送失敗：{error_msg}")
@@ -261,6 +296,16 @@ class Notifier:
                         self.db_path, notification['id'], 'failed', error_msg
                     )
                     
+            except requests.exceptions.Timeout:
+                # timeout：保存 retry_key 以便重試沿用
+                self.logger.warning(
+                    f"LINE 通知超時：{notification.get('content_id')}"
+                )
+                update_notification_status(
+                    self.db_path, notification['id'], 'pending',
+                    '請求超時',
+                    retry_key=retry_key
+                )
             except requests.exceptions.RequestException as e:
                 self.logger.error(f"LINE 通知請求失敗：{e}")
                 update_notification_status(
