@@ -18,7 +18,6 @@ import requests
 
 from src.database import (
     update_check_status,
-    set_baseline_ready,
     get_check_status,
     save_batch_with_transaction,
 )
@@ -247,20 +246,27 @@ class PostFetcher:
                 # 空列表視為成功（無新貼文）
                 self.logger.info(f"粉專 {page_id} 無新貼文")
 
-                # 首次成功後標記基準已建立
-                if not baseline_ready:
-                    set_baseline_ready(self.db_path, page_id, "post")
-                    self.logger.info(f"粉專 {page_id} 貼文基準已建立")
-
-                update_check_status(
+                # 即使首次讀取沒有貼文，也要在同一 transaction 建立 baseline，
+                # 避免下一次真正的新貼文被誤判成首次基準資料而漏通知。
+                success = save_batch_with_transaction(
                     self.db_path,
-                    page_id,
-                    "post",
-                    "success",
-                    None,
-                    None,
-                    pagination_incomplete=False,
+                    [],
+                    [],
+                    [
+                        {
+                            "page_id": page_id,
+                            "content_type": "post",
+                            "status": "success",
+                            "error_code": None,
+                            "error_message": None,
+                            "pagination_incomplete": False,
+                            "baseline_ready": True,
+                        }
+                    ],
+                    self.logger,
                 )
+                if success and not baseline_ready:
+                    self.logger.info(f"粉專 {page_id} 貼文基準已建立")
                 return []
 
             # 處理新貼文（先收集，不立即保存）
@@ -308,11 +314,10 @@ class PostFetcher:
                     None,
                     None,
                     pagination_incomplete=False,
+                    baseline_ready=True,
                 )
 
-            # 首次成功後標記基準已建立
             if not baseline_ready:
-                set_baseline_ready(self.db_path, page_id, "post")
                 self.logger.info(f"粉專 {page_id} 貼文基準已建立")
 
             return new_posts
@@ -503,6 +508,7 @@ class PostFetcher:
             "error_code": None,
             "error_message": None,
             "pagination_incomplete": pagination_incomplete,
+            "baseline_ready": True,
         }
 
         success = save_batch_with_transaction(

@@ -247,6 +247,7 @@ def update_check_status(
     error_code: Optional[str] = None,
     error_message: Optional[str] = None,
     pagination_incomplete: bool = False,
+    baseline_ready: Optional[bool] = None,
 ) -> None:
     """更新檢查狀態"""
     conn = get_db_connection(db_path)
@@ -254,34 +255,66 @@ def update_check_status(
 
     now = datetime.now(timezone.utc)
 
-    cursor.execute(
-        """
-        INSERT INTO checks 
-        (page_id, content_type, last_attempt_at, last_success_at, status, 
-         error_code, error_message, pagination_incomplete)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(page_id, content_type) 
-        DO UPDATE SET 
-            last_attempt_at = excluded.last_attempt_at,
-            last_success_at = CASE WHEN excluded.status = 'success' 
-                                   THEN excluded.last_success_at 
-                                   ELSE checks.last_success_at END,
-            status = excluded.status,
-            error_code = excluded.error_code,
-            error_message = excluded.error_message,
-            pagination_incomplete = excluded.pagination_incomplete
-    """,
-        (
-            page_id,
-            content_type,
-            now,
-            now if status == "success" else None,
-            status,
-            error_code,
-            error_message,
-            1 if pagination_incomplete else 0,
-        ),
-    )
+    if baseline_ready is None:
+        cursor.execute(
+            """
+            INSERT INTO checks
+            (page_id, content_type, last_attempt_at, last_success_at, status,
+             error_code, error_message, pagination_incomplete)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(page_id, content_type)
+            DO UPDATE SET
+                last_attempt_at = excluded.last_attempt_at,
+                last_success_at = CASE WHEN excluded.status = 'success'
+                                       THEN excluded.last_success_at
+                                       ELSE checks.last_success_at END,
+                status = excluded.status,
+                error_code = excluded.error_code,
+                error_message = excluded.error_message,
+                pagination_incomplete = excluded.pagination_incomplete
+        """,
+            (
+                page_id,
+                content_type,
+                now,
+                now if status == "success" else None,
+                status,
+                error_code,
+                error_message,
+                1 if pagination_incomplete else 0,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            INSERT INTO checks
+            (page_id, content_type, baseline_ready, last_attempt_at, last_success_at,
+             status, error_code, error_message, pagination_incomplete)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(page_id, content_type)
+            DO UPDATE SET
+                baseline_ready = excluded.baseline_ready,
+                last_attempt_at = excluded.last_attempt_at,
+                last_success_at = CASE WHEN excluded.status = 'success'
+                                       THEN excluded.last_success_at
+                                       ELSE checks.last_success_at END,
+                status = excluded.status,
+                error_code = excluded.error_code,
+                error_message = excluded.error_message,
+                pagination_incomplete = excluded.pagination_incomplete
+        """,
+            (
+                page_id,
+                content_type,
+                1 if baseline_ready else 0,
+                now,
+                now if status == "success" else None,
+                status,
+                error_code,
+                error_message,
+                1 if pagination_incomplete else 0,
+            ),
+        )
 
     conn.commit()
     conn.close()
@@ -573,32 +606,63 @@ def save_batch_with_transaction(
         # 更新檢查狀態
         now = datetime.now(timezone.utc)
         for check in check_updates:
-            cursor.execute(
-                """
-                INSERT INTO checks 
-                (page_id, content_type, last_attempt_at, last_success_at, status, 
-                 error_code, error_message, pagination_incomplete)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(page_id, content_type) 
-                DO UPDATE SET 
-                    last_attempt_at = excluded.last_attempt_at,
-                    last_success_at = excluded.last_success_at,
-                    status = excluded.status,
-                    error_code = excluded.error_code,
-                    error_message = excluded.error_message,
-                    pagination_incomplete = excluded.pagination_incomplete
-            """,
-                (
-                    check["page_id"],
-                    check["content_type"],
-                    now,
-                    now if check["status"] == "success" else None,
-                    check["status"],
-                    check.get("error_code"),
-                    check.get("error_message"),
-                    1 if check.get("pagination_incomplete") else 0,
-                ),
-            )
+            if "baseline_ready" in check:
+                cursor.execute(
+                    """
+                    INSERT INTO checks
+                    (page_id, content_type, baseline_ready, last_attempt_at,
+                     last_success_at, status, error_code, error_message,
+                     pagination_incomplete)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(page_id, content_type)
+                    DO UPDATE SET
+                        baseline_ready = excluded.baseline_ready,
+                        last_attempt_at = excluded.last_attempt_at,
+                        last_success_at = excluded.last_success_at,
+                        status = excluded.status,
+                        error_code = excluded.error_code,
+                        error_message = excluded.error_message,
+                        pagination_incomplete = excluded.pagination_incomplete
+                """,
+                    (
+                        check["page_id"],
+                        check["content_type"],
+                        1 if check.get("baseline_ready") else 0,
+                        now,
+                        now if check["status"] == "success" else None,
+                        check["status"],
+                        check.get("error_code"),
+                        check.get("error_message"),
+                        1 if check.get("pagination_incomplete") else 0,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO checks
+                    (page_id, content_type, last_attempt_at, last_success_at, status,
+                     error_code, error_message, pagination_incomplete)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(page_id, content_type)
+                    DO UPDATE SET
+                        last_attempt_at = excluded.last_attempt_at,
+                        last_success_at = excluded.last_success_at,
+                        status = excluded.status,
+                        error_code = excluded.error_code,
+                        error_message = excluded.error_message,
+                        pagination_incomplete = excluded.pagination_incomplete
+                """,
+                    (
+                        check["page_id"],
+                        check["content_type"],
+                        now,
+                        now if check["status"] == "success" else None,
+                        check["status"],
+                        check.get("error_code"),
+                        check.get("error_message"),
+                        1 if check.get("pagination_incomplete") else 0,
+                    ),
+                )
 
         conn.commit()
         return True

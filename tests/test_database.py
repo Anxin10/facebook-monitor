@@ -273,6 +273,28 @@ class TestDatabase(unittest.TestCase):
         # 檢查排序（最新的在前）
         self.assertEqual(items[0]["content_id"], "page0_post0")
 
+    def test_multiple_items_round_trip(self):
+        """測試多筆內容可完整寫入與讀回。"""
+        for page in range(3):
+            for i in range(3):
+                content_id = f"page{page}_post{i}"
+                add_item(
+                    self.db_path,
+                    "test_page",
+                    "post",
+                    content_id,
+                    author_id="page_id",
+                    published_at=datetime.now(timezone.utc)
+                    - timedelta(hours=page * 10 + i),
+                )
+
+        items = get_items_by_page(self.db_path, "test_page", limit=100)
+        self.assertEqual(len(items), 9)
+        self.assertEqual(
+            {item["content_id"] for item in items},
+            {f"page{page}_post{i}" for page in range(3) for i in range(3)},
+        )
+
     def test_notifications_by_channel(self):
         """測試逐目的地通知"""
         # 新增通知

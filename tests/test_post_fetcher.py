@@ -12,6 +12,8 @@
 
 import unittest
 import json
+import os
+import shutil
 import tempfile
 from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock, patch, MagicMock
@@ -23,7 +25,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from post_fetcher import PostFetcher, GraphClient
-from src.database import init_database
+from src.database import (
+    get_check_status,
+    get_items_by_page,
+    get_pending_notifications,
+    init_database,
+)
 
 
 class TestGraphClient(unittest.TestCase):
@@ -132,11 +139,9 @@ class TestPostFetcher(unittest.TestCase):
 
     def setUp(self):
         """測試準備"""
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_path = str(Path(self.temp_dir.name) / "test.db")
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test.db")
         init_database(self.db_path)
-        self.addCleanup(self.temp_dir.cleanup)
-
         self.config = {
             "storage": {"database": self.db_path},
             "posts": {
@@ -155,6 +160,9 @@ class TestPostFetcher(unittest.TestCase):
         self.logger = Mock()
         self.fetcher = PostFetcher(self.config, self.logger)
         self.fetcher.access_token = "test_token"
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
 
     def test_uses_posts_endpoint(self):
         """測試使用 /posts 端點而非 /feed"""
@@ -187,9 +195,11 @@ class TestPostFetcher(unittest.TestCase):
     def test_cursor_pagination(self):
         """測試真實 cursor pagination"""
         call_count = [0]
+        called_params = []
 
         def mock_get(path, params=None):
             call_count[0] += 1
+            called_params.append(dict(params or {}))
 
             mock_response = Mock()
 
@@ -226,8 +236,9 @@ class TestPostFetcher(unittest.TestCase):
 
         # 應該有兩筆貼文
         self.assertEqual(len(posts), 2)
-        # 應該呼叫兩次 API
         self.assertEqual(call_count[0], 2)
+        self.assertNotIn("after", called_params[0])
+        self.assertEqual(called_params[1]["after"], "cursor_1")
 
     def test_max_pages_incomplete_no_commit(self):
         """測試 max_pages incomplete 不提交"""
@@ -267,6 +278,7 @@ class TestPostFetcher(unittest.TestCase):
         mock_response.status_code = 429
         mock_response.headers = {}
         mock_response.text = '{"error": {"message": "Rate limit exceeded"}}'
+        mock_response.json.return_value = {"error": {"message": "Rate limit exceeded"}}
         error = requests.HTTPError(response=mock_response)
 
         with patch.object(self.fetcher.graph, "get", side_effect=error):
@@ -279,9 +291,10 @@ class TestPostFetcher(unittest.TestCase):
 
     def test_first_run_baseline_no_spam(self):
         """測試首次基準不 spam"""
-        # 設定 notify_existing_on_first_run = False
         self.config["notifications"]["notify_existing_on_first_run"] = False
-
+        self.config["notifications"]["channels"] = [
+            {"id": "test_channel", "backend": "apprise"}
+        ]
         self.fetcher = PostFetcher(self.config, self.logger)
         self.fetcher.access_token = "test_token"
 
@@ -300,18 +313,27 @@ class TestPostFetcher(unittest.TestCase):
         mock_response.raise_for_status = Mock()
 
         with patch.object(self.fetcher.graph, "get", return_value=mock_response):
-            with patch("src.post_fetcher.get_check_status", return_value=None):
-                # 不 patch item_exists（已不存在）
-                with patch("src.post_fetcher.save_batch_with_transaction") as mock_save:
-                    mock_save.return_value = True
+            result = self.fetcher.fetch_page_posts("test_page")
 
-                    result = self.fetcher.fetch_page_posts("test_page")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(len(get_items_by_page(self.db_path, "test_page")), 1)
+        self.assertEqual(get_pending_notifications(self.db_path), [])
+        self.assertEqual(
+            get_check_status(self.db_path, "test_page", "post")["baseline_ready"], 1
+        )
 
-                    # 檢查通知是否被加入（不應該）
-                    call_args = mock_save.call_args
-                    if call_args:
-                        notifications = call_args[0][2]
-                        self.assertEqual(len(notifications), 0)
+    def test_empty_first_run_marks_baseline_ready(self):
+        """首次抓不到任何貼文時仍應建立 baseline。"""
+        mock_response = Mock()
+        mock_response.json.return_value = {"data": [], "paging": {}}
+
+        with patch.object(self.fetcher.graph, "get", return_value=mock_response):
+            result = self.fetcher.fetch_page_posts("test_page")
+
+        self.assertEqual(result, [])
+        status = get_check_status(self.db_path, "test_page", "post")
+        self.assertEqual(status["status"], "success")
+        self.assertEqual(status["baseline_ready"], 1)
 
     def test_posts_endpoint_no_author_filter(self):
         """測試 /posts 端點不需要作者篩選"""
