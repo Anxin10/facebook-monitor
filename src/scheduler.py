@@ -1,17 +1,15 @@
 """排程器模組
 
-依設計文件第 3、4 節實作排程功能。
+依 HYBRID_INTEGRATION.md 實作排程功能。
+- 使用獨立 Scheduler，保留秒數精度
+- 通知顯示時區採設定值而非主機時區
 """
 
 import logging
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Optional
 import schedule
-
-from src.database import (
-    get_check_status, update_check_status, set_baseline_ready
-)
 
 
 class Scheduler:
@@ -21,13 +19,7 @@ class Scheduler:
     """
     
     def __init__(self, config: Dict[str, Any], logger: logging.Logger):
-        """
-        初始化排程器
-        
-        Args:
-            config: 設定字典
-            logger: 日誌記錄器
-        """
+        """初始化排程器"""
         self.config = config
         self.logger = logger
         self.db_path = config.get('storage', {}).get('database', 'monitor.sqlite3')
@@ -45,25 +37,32 @@ class Scheduler:
         posts_config = self.config.get('posts', {})
         if posts_config.get('source') == 'graph_api':
             interval_seconds = posts_config.get('interval_seconds', 600)
-            interval_minutes = interval_seconds // 60
-            
-            schedule.every(interval_minutes).minutes.do(self._check_posts)
-            self.logger.info(f"貼文監控任務已註冊：每 {interval_minutes} 分鐘")
+            # schedule 支援秒數精度
+            self._schedule_every(interval_seconds, self._check_posts, 'posts')
+            self.logger.info(f"貼文監控任務已註冊：每 {interval_seconds} 秒")
         
-        # 限時動態監控任務（待驗證後啟用）
+        # 限時動態監控任務（尚未實作）
         stories_config = self.config.get('stories', {})
         if stories_config.get('enabled', False):
-            interval_seconds = stories_config.get('interval_seconds', 300)
-            interval_minutes = interval_seconds // 60
-            
-            schedule.every(interval_minutes).minutes.do(self._check_stories)
-            self.logger.info(f"限時動態監控任務已註冊：每 {interval_minutes} 分鐘")
+            self.logger.warning("限時動態功能尚未實作，stories.enabled 必須維持 false")
         else:
             self.logger.info("限時動態監控未啟用")
         
-        # 通知發送任務
-        schedule.every(1).minutes.do(self._send_notifications)
-        self.logger.info("通知發送任務已註冊：每 1 分鐘")
+        # 通知發送任務（每 30 秒）
+        self._schedule_every(30, self._send_notifications, 'notifications')
+        self.logger.info("通知發送任務已註冊：每 30 秒")
+    
+    def _schedule_every(
+        self, seconds: int, job_func, task_name: str
+    ) -> None:
+        """依秒數排程任務"""
+        if seconds < 60:
+            # 小於 1 分鐘，使用 seconds
+            schedule.every(seconds).seconds.do(job_func)
+        else:
+            # 大於等於 1 分鐘，使用 minutes
+            minutes = seconds // 60
+            schedule.every(minutes).minutes.do(job_func)
     
     def _check_posts(self) -> None:
         """執行貼文檢查"""
@@ -86,27 +85,6 @@ class Scheduler:
             self.logger.error(f"貼文檢查失敗：{e}")
         finally:
             self._running_tasks['posts'] = False
-    
-    def _check_stories(self) -> None:
-        """執行限時動態檢查"""
-        self.logger.info("開始執行限時動態檢查")
-        
-        if self._running_tasks.get('stories'):
-            self.logger.warning("限時動態檢查已在執行中，跳過")
-            return
-        
-        self._running_tasks['stories'] = True
-        
-        try:
-            from src.story_fetcher import StoryFetcher
-            fetcher = StoryFetcher(self.config, self.logger)
-            fetcher.fetch_all()
-        except ImportError:
-            self.logger.warning("限時動態讀取器模組尚未實作（待驗證）")
-        except Exception as e:
-            self.logger.error(f"限時動態檢查失敗：{e}")
-        finally:
-            self._running_tasks['stories'] = False
     
     def _send_notifications(self) -> None:
         """執行通知發送"""
