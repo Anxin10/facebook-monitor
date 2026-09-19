@@ -87,9 +87,10 @@ python -m unittest discover -s tests -v
 
 ### 測試涵蓋
 
-- **資料庫測試**（12 項）: 資料儲存、去重、分頁、通知管理
-- **貼文讀取器測試**（11 項）: API 呼叫、作者篩選、錯誤處理
-- **通知模組測試**（7 項）: Apprise、LINE、重試機制
+- **資料庫測試**（13 項）: 資料儲存、去重、排序、通知管理
+- **貼文讀取器與 GraphClient 測試**（22 項）: API 呼叫、游標分頁、錯誤處理
+- **通知模組測試**（12 項）: Apprise、LINE、冪等重試與退避
+- **排程器測試**（1 項）: Scheduler instance 隔離
 
 詳細測試指南請參閱 [TESTING.md](TESTING.md)
 

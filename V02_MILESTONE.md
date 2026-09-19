@@ -37,14 +37,15 @@
 
 ### ✓ LINE Retry
 - [x] 冪等重試機制
-  - 正確處理 `is_duplicate` 回應
-  - 保存 `retry_key` 用於追蹤
+  - 首次請求即加入 `X-Line-Retry-Key`
+  - timeout / 5xx 保存並沿用同一個 `retry_key`
+  - 409 視為已接受，其他 4xx 不重試
   - 避免重複通知
 
 ### ✓ Scheduler Precision
 - [x] 秒數精度排程
   - 支援小於 60 秒的間隔
-  - 正確使用 `schedule.every().seconds`
+  - 每個實例使用獨立 `schedule.Scheduler()`
 
 ## 測試覆蓋
 

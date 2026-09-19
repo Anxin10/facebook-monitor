@@ -9,10 +9,12 @@
 ```bash
 git clone https://github.com/Anxin10/facebook-monitor.git
 cd facebook-monitor
-git checkout hybrid-integration-2026-09-19
+git checkout fix/core-correctness
 ```
 
 ### 2. 建立虛擬環境
+
+#### 方式 A：venv
 
 ```bash
 # Python 3.10 以上
@@ -23,6 +25,13 @@ source .venv/bin/activate
 
 # Windows PowerShell
 .venv\Scripts\Activate.ps1
+```
+
+#### 方式 B：Conda
+
+```bash
+conda create -y -n facebook-monitor python=3.11
+conda activate facebook-monitor
 ```
 
 ### 3. 安裝依賴
@@ -46,6 +55,23 @@ python run_tests.py
 python -m unittest discover -s tests -v
 ```
 
+> **⚠️ Windows + Conda 使用者注意**
+>
+> 在 Windows 繁體中文環境（CP950）下，**請勿使用** `conda run -n facebook-monitor python run_tests.py`。
+>
+> Conda 25.x 的 `conda run` 會以 `Popen(text=True, errors="replace")` 捕獲子程序輸出，
+> 並用系統預設編碼（CP950）解碼 UTF-8 bytes，導致 `UnicodeEncodeError` 崩潰。
+>
+> **正確做法（擇一）：**
+> ```bash
+> # 推薦：先啟用環境再執行
+> conda activate facebook-monitor
+> python run_tests.py
+>
+> # 或：使用 --live-stream 跳過 stdout 捕獲
+> conda run --live-stream -n facebook-monitor python run_tests.py
+> ```
+
 ### 預期結果
 
 ```
@@ -55,7 +81,7 @@ Facebook 監控系統 - 離線測試
 
 測試摘要
 ============================================================
-測試數量：30
+測試數量：48
 失敗：0
 錯誤：0
 跳過：0
