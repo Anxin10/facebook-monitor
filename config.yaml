@@ -15,6 +15,7 @@ posts:
   author_filter: "target_page_only"
   max_pages: 5
   initial_lookback_days: 7
+  api_version: "v26.0"  # Graph API version (v26.0, v25.0, etc.)
 
 # 限時動態設定（尚未實作）
 stories:
@@ -31,7 +32,7 @@ storage:
 # 通知設定
 notifications:
   timezone: Asia/Taipei
-  notify_existing_on_first_run: false
+  notify_existing_on_first_run: false  # 首次基準不通知既有內容
   notify_post_edits: false
   channels: []
   # 範例：
