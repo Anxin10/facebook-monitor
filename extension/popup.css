@@ -1,0 +1,5 @@
+body { width: 360px; padding: 16px; font: 14px/1.5 system-ui; color: #17202b; }
+h1 { font-size: 20px; } input { width: 95%; margin: 8px 0; }
+button { padding: 7px 12px; margin: 5px 5px 5px 0; cursor: pointer; }
+section { border-top: 1px solid #ddd; padding-top: 10px; margin-top: 10px; }
+#status { color: #9c3620; } a { overflow-wrap: anywhere; }

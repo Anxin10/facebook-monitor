@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-Hant"><meta charset="utf-8"><title>Facebook Monitor</title>
+<link rel="stylesheet" href="popup.css">
+<body><h1>Facebook Monitor</h1>
+<p>開啟目標粉專並瀏覽既有貼文，確認基準後再開始通知。</p>
+<label>本機配對碼 <input id="token" type="password" autocomplete="off"></label>
+<button id="save">儲存並連線</button><button id="refresh">重新整理狀態</button>
+<p id="status" role="status"></p><div id="targets"></div>
+<p>只記錄已載入、可辨識的貼文。首次看見的舊文也可能通知；關閉分頁後停止觀察。</p>
+<script src="popup.js"></script></body></html>

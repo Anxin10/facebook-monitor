@@ -28,7 +28,7 @@
 1. 移除錯誤的 `sqlite3` pip 依賴及未使用的 facebook-sdk / Playwright 等必裝依賴。
 2. 新增 Apprise 通知適配；LINE 使用 Messaging API push，不再呼叫 LINE Notify。
 3. 每個 channel id 獨立追蹤送達與重試；成功目的地不因其他目的地失敗而重送。
-4. 失敗通知回到 pending，依 30 秒起跳、最高 1 小時的退避間隔重試；保留舊 failed 紀錄的取回能力。
+4. 可重試錯誤回到 pending，依 30 秒起跳、最高 1 小時的退避間隔重試；LINE timeout 與 5xx 沿用同一個 retry key，其他 4xx 留在 failed，不做無效重試。
 5. 貼文使用 `from.id` 判定作者，未知作者明確失敗；不當作空結果。
 6. 分頁使用游標與固定 Graph host，不跟隨含 Token 的 next URL。
 7. 分頁未完成或 API 錯誤時不保存部分資料，也不推進成功時間；空列表則為成功。
@@ -113,4 +113,4 @@ Apprise 由 pip 安裝並附帶其套件授權。上述其他 repo 僅供比較�
 
 ## 驗證結果
 
-在 Python 3.12 虛擬環境安裝依賴成功；10 項離線測試全部通過，涵蓋三頁游標、作者篩選、空基準、部分失敗、分頁上限、交易回滾、重啟去重、逐目的地重試、Apprise 呼叫與 LINE 重試回應。所有通知傳送在測試中模擬，未向任何接收者發送訊息。未執行需要真實憑證的線上驗證。
+在 Python 3.11 虛擬環境安裝依賴成功；48 項離線測試全部通過，涵蓋游標分頁、空基準、部分失敗、分頁上限、交易回滾、重啟去重、逐目的地重試、Apprise 呼叫、LINE 409/4xx/5xx/timeout 與 retry key 沿用，以及 Scheduler instance 隔離。`unittest`、`pytest --cov`、flake8 與 Black 檢查均通過。所有通知傳送在測試中模擬，未向任何接收者發送訊息。未執行需要真實憑證的線上驗證。
