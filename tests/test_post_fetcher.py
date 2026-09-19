@@ -1,11 +1,12 @@
-"""貼文讀取器測試 - Core Correctness 版本
+"""貼文讀取器測試 - v0.2 Core Correctness
 
-涵蓋 v0.2 核心修正：
+涵蓋：
+- GraphClient 測試
 - /posts 端點使用
 - 真實 cursor pagination
 - incomplete fetch 不提交
 - 首次基準不 spam
-- GraphClient 統一處理
+- API version 可配置
 """
 
 import unittest
@@ -81,7 +82,16 @@ class TestGraphClient(unittest.TestCase):
         error = requests.HTTPError(response=mock_response)
         
         retry_after = self.client.get_retry_after(error)
-        self.assertEqual(retry_after, '60')
+        self.assertEqual(retry_after, 60)
+    
+    def test_get_retry_after_invalid(self):
+        """測試 Retry-After 無效值"""
+        mock_response = Mock()
+        mock_response.headers = {'Retry-After': 'invalid'}
+        error = requests.HTTPError(response=mock_response)
+        
+        retry_after = self.client.get_retry_after(error)
+        self.assertIsNone(retry_after)
 
 
 class TestPostFetcher(unittest.TestCase):
@@ -107,12 +117,8 @@ class TestPostFetcher(unittest.TestCase):
         }
         
         self.logger = Mock()
-        
-        # 模擬資料庫
-        with patch('src.post_fetcher.get_check_status', return_value=None):
-            with patch('src.post_fetcher.item_exists', return_value=False):
-                self.fetcher = PostFetcher(self.config, self.logger)
-                self.fetcher.access_token = 'test_token'
+        self.fetcher = PostFetcher(self.config, self.logger)
+        self.fetcher.access_token = 'test_token'
     
     def test_uses_posts_endpoint(self):
         """測試使用 /posts 端點而非 /feed"""
@@ -125,9 +131,7 @@ class TestPostFetcher(unittest.TestCase):
                     'message': 'Test post'
                 }
             ],
-            'paging': {
-                'cursors': {'after': 'cursor_1'}
-            }
+            'paging': {}
         }
         mock_response.raise_for_status = Mock()
         
@@ -178,9 +182,7 @@ class TestPostFetcher(unittest.TestCase):
                             'message': 'Post 2'
                         }
                     ],
-                    'paging': {
-                        'cursors': {'after': 'cursor_2'}
-                    }
+                    'paging': {}
                 }
             
             mock_response.raise_for_status = Mock()
@@ -194,9 +196,40 @@ class TestPostFetcher(unittest.TestCase):
         # 應該呼叫兩次 API
         self.assertEqual(call_count[0], 2)
     
-    def test_incomplete_fetch_no_commit(self):
-        """測試 incomplete fetch 不提交"""
-        # 模擬 API 錯誤
+    def test_max_pages_incomplete_no_commit(self):
+        """測試 max_pages incomplete 不提交"""
+        call_count = [0]
+        
+        def mock_get(path, params=None):
+            call_count[0] += 1
+            
+            mock_response = Mock()
+            mock_response.json.return_value = {
+                'data': [
+                    {
+                        'id': f'post_{call_count[0]}',
+                        'created_time': '2026-09-18T10:00:00+0000',
+                        'message': f'Post {call_count[0]}'
+                    }
+                ],
+                'paging': {
+                    'next': f'next_{call_count[0]}',
+                    'cursors': {'after': f'cursor_{call_count[0]}'}
+                }
+            }
+            mock_response.raise_for_status = Mock()
+            return mock_response
+        
+        with patch.object(self.fetcher.graph, 'get', side_effect=mock_get):
+            posts, incomplete, error = self.fetcher._fetch_posts('test_page')
+        
+        # 應該達到 max_pages 限制（3 頁）
+        self.assertEqual(len(posts), 3)
+        self.assertTrue(incomplete)
+        self.assertIsNone(error)
+    
+    def test_api_error_no_commit(self):
+        """測試 API 錯誤不提交"""
         mock_response = Mock()
         mock_response.status_code = 429
         mock_response.json.return_value = {
@@ -294,38 +327,6 @@ class TestPostFetcher(unittest.TestCase):
         self.assertEqual(len(posts), 0)
         self.assertFalse(incomplete)
         self.assertIsNone(error)
-    
-    def test_pagination_limit(self):
-        """測試分頁上限"""
-        call_count = [0]
-        
-        def mock_get(path, params=None):
-            call_count[0] += 1
-            
-            mock_response = Mock()
-            mock_response.json.return_value = {
-                'data': [
-                    {
-                        'id': f'post_{call_count[0]}',
-                        'created_time': '2026-09-18T10:00:00+0000',
-                        'message': f'Post {call_count[0]}'
-                    }
-                ],
-                'paging': {
-                    'next': f'next_{call_count[0]}',
-                    'cursors': {'after': f'cursor_{call_count[0]}'}
-                }
-            }
-            mock_response.raise_for_status = Mock()
-            return mock_response
-        
-        with patch.object(self.fetcher.graph, 'get', side_effect=mock_get):
-            posts, incomplete, error = self.fetcher._fetch_posts('test_page')
-        
-        # 應該達到 max_pages 限制（3 頁）
-        self.assertEqual(len(posts), 3)
-        self.assertTrue(incomplete)
-        self.assertEqual(call_count[0], 3)
     
     def test_network_error(self):
         """測試網路錯誤處理"""
