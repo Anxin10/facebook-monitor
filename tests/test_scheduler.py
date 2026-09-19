@@ -9,7 +9,7 @@ from src.scheduler import Scheduler
 class TestScheduler(unittest.TestCase):
     def test_instances_do_not_share_jobs(self):
         config = {
-            "posts": {"source": "graph_api", "interval_seconds": 17},
+            "posts": {"source": "browser"},
             "stories": {"enabled": False},
         }
 
@@ -17,12 +17,12 @@ class TestScheduler(unittest.TestCase):
         second = Scheduler(config, Mock())
 
         self.assertIsNot(first.scheduler, second.scheduler)
-        self.assertEqual(len(first.scheduler.jobs), 2)
-        self.assertEqual(len(second.scheduler.jobs), 2)
+        self.assertEqual(len(first.scheduler.jobs), 1)
+        self.assertEqual(len(second.scheduler.jobs), 1)
 
         first.scheduler.clear()
         self.assertEqual(first.scheduler.jobs, [])
-        self.assertEqual(len(second.scheduler.jobs), 2)
+        self.assertEqual(len(second.scheduler.jobs), 1)
 
 
 if __name__ == "__main__":

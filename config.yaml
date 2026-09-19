@@ -1,5 +1,5 @@
 # Facebook 監控系統設定檔
-# 詳細說明請參閱 HYBRID_INTEGRATION.md
+# 瀏覽器安裝與操作請參閱 BROWSER_SETUP.md
 
 # 監控目標清單
 targets:
@@ -10,12 +10,7 @@ targets:
 
 # 貼文監控設定
 posts:
-  source: "graph_api"
-  interval_seconds: 600
-  author_filter: "target_page_only"
-  max_pages: 5
-  initial_lookback_days: 7
-  api_version: "v26.0"  # Graph API version (v26.0, v25.0, etc.)
+  source: "browser"
 
 # 限時動態設定（尚未實作）
 stories:

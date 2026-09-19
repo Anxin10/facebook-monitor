@@ -1,5 +1,9 @@
 # 測試與驗證指南
 
+目前主程式使用瀏覽器觀察，安裝與實機驗收請參閱 [BROWSER_SETUP.md](BROWSER_SETUP.md)。
+執行 `python -X utf8 -m unittest discover -s tests -v` 與 `node --test extension/*.test.cjs`。
+下方 Graph API 驗證是獨立工具，不是瀏覽器模式的必要條件。
+
 本文檔說明如何執行離線測試和線上驗證。
 
 ## 環境準備
