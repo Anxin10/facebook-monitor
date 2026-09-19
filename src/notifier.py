@@ -1,8 +1,9 @@
 """通知發送器模組
 
-依 HYBRID_INTEGRATION.md 實作多管道通知功能。
+依 v0.2 實作多管道通知功能。
 支援 Apprise（Telegram、Email 等）與 LINE Messaging API。
 每個 channel id 獨立追蹤送達與重試。
+LINE 支援冪等重試（idempotent retry）。
 """
 
 import os
@@ -26,7 +27,7 @@ class Notifier:
     
     支援多種通知管道：
     - Apprise: Telegram, Email, 等
-    - LINE: Messaging API push
+    - LINE: Messaging API push（支援冪等重試）
     """
     
     def __init__(self, config: Dict[str, Any], logger: logging.Logger):
@@ -175,7 +176,12 @@ class Notifier:
     def _send_via_line(
         self, channel_config: Dict[str, Any], notifications: List[Dict[str, Any]]
     ) -> None:
-        """透過 LINE Messaging API 發送通知"""
+        """透過 LINE Messaging API 發送通知
+        
+        支援冪等重試（idempotent retry）：
+        - LINE API 在重複發送相同訊息時返回 is_duplicate: true
+        - 正確處理這種情況，視為成功並保存 requestId
+        """
         import requests
         
         token_env = channel_config.get('token_env')
@@ -216,15 +222,38 @@ class Notifier:
                 # LINE API 成功時返回 200 與 responseId
                 if response.status_code == 200:
                     response_data = response.json()
-                    retry_key = response_data.get('responseId')
                     
-                    self.logger.info(
-                        f"LINE 通知發送成功：{notification.get('content_id')}"
-                    )
-                    update_notification_status(
-                        self.db_path, notification['id'], 'sent',
-                        retry_key=retry_key
-                    )
+                    # 檢查回應格式
+                    statuses = response_data.get('statuses', [])
+                    if statuses:
+                        status = statuses[0]
+                        retry_key = status.get('requestId')
+                        is_duplicate = status.get('is_duplicate', False)
+                        
+                        if is_duplicate:
+                            self.logger.info(
+                                f"LINE 通知重複（冪等）：{notification.get('content_id')}"
+                            )
+                        else:
+                            self.logger.info(
+                                f"LINE 通知發送成功：{notification.get('content_id')}"
+                            )
+                        
+                        # 無論是否重複，都視為成功
+                        update_notification_status(
+                            self.db_path, notification['id'], 'sent',
+                            retry_key=retry_key
+                        )
+                    else:
+                        # 舊格式回應
+                        retry_key = response_data.get('responseId')
+                        self.logger.info(
+                            f"LINE 通知發送成功：{notification.get('content_id')}"
+                        )
+                        update_notification_status(
+                            self.db_path, notification['id'], 'sent',
+                            retry_key=retry_key
+                        )
                 else:
                     error_msg = f"LINE API 返回 {response.status_code}: {response.text}"
                     self.logger.error(f"LINE 通知發送失敗：{error_msg}")
