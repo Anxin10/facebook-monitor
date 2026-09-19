@@ -1,16 +1,16 @@
 # Facebook 監控系統 - 主程式入口
-# 依設計文件 facebook-monitor-design.md 實作
+# 依 HYBRID_INTEGRATION.md 實作
 
 import os
 import sys
 import logging
 from pathlib import Path
 
-# 加入 src 目錄到 Python 路徑
-sys.path.insert(0, str(Path(__file__).parent))
-
 from dotenv import load_dotenv
 import yaml
+
+# 加入 src 目錄到 Python 路徑
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 # 載入環境變數
 load_dotenv()
@@ -59,12 +59,11 @@ def main():
         logger.error("設定載入失敗，退出")
         sys.exit(1)
     
-    logger.info(f"設定檔載入成功")
+    logger.info("設定檔載入成功")
     
     # 檢查必要環境變數
     required_env_vars = [
-        'FACEBOOK_APP_ID',
-        'FACEBOOK_PAGE_ACCESS_TOKEN'
+        'FACEBOOK_ACCESS_TOKEN'
     ]
     
     missing_envs = [var for var in required_env_vars if not os.getenv(var)]
@@ -90,14 +89,23 @@ def main():
     stories_enabled = config.get('stories', {}).get('enabled', False)
     
     logger.info(f"貼文監控：{'啟用' if posts_enabled else '停用'}")
-    logger.info(f"限時動態監控：{'啟用' if stories_enabled else '停用（待驗證）'}")
+    logger.info(f"限時動態監控：{'啟用' if stories_enabled else '停用（尚未實作）'}")
     
     if stories_enabled:
-        logger.warning("限時動態功能尚未完成驗證，請確認資料來源可用性")
+        logger.warning("限時動態功能尚未實作，stories.enabled 必須維持 false")
+    
+    # 檢查通知管道設定
+    channels = config.get('notifications', {}).get('channels', [])
+    if channels:
+        logger.info(f"啟用 {len(channels)} 個通知管道")
+        for ch in channels:
+            logger.info(f"  - {ch.get('id')}: {ch.get('backend')}")
+    else:
+        logger.info("通知管道未設定")
     
     # 初始化資料庫
     try:
-        from src.database import init_database
+        from database import init_database
         db_path = config.get('storage', {}).get('database', 'monitor.sqlite3')
         init_database(db_path)
         logger.info(f"資料庫初始化完成：{db_path}")
@@ -109,7 +117,7 @@ def main():
     
     # 啟動排程器
     try:
-        from src.scheduler import Scheduler
+        from scheduler import Scheduler
         scheduler = Scheduler(config, logger)
         scheduler.run()
     except ImportError:
