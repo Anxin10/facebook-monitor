@@ -1,6 +1,7 @@
 """排程器模組 - v0.2
 
 支援秒數精度的獨立排程器。
+每個 Scheduler 實例使用獨立的 schedule.Scheduler() 物件。
 """
 
 import logging
@@ -13,7 +14,7 @@ import schedule
 class Scheduler:
     """獨立排程器
     
-    支援秒數精度，獨立運行不依賴外部循環。
+    支援秒數精度，每個實例使用獨立的 Scheduler 物件。
     """
     
     def __init__(self, config: Dict[str, Any], logger: logging.Logger):
@@ -25,6 +26,9 @@ class Scheduler:
         # 任務狀態追蹤
         self._running_tasks: Dict[str, bool] = {}
         self._stop_event = False
+        
+        # 使用獨立的 Scheduler 實例
+        self.scheduler = schedule.Scheduler()
         
         # 註冊任務
         self._register_tasks()
@@ -53,10 +57,10 @@ class Scheduler:
     def _schedule_exact_seconds(self, seconds: int, job_func) -> None:
         """依秒數精確排程任務
         
-        使用 schedule 的 seconds 方法，支援秒數精度。
+        使用獨立 Scheduler 的 seconds 方法，支援秒數精度。
         """
         if seconds > 0:
-            schedule.every(seconds).seconds.do(job_func)
+            self.scheduler.every(seconds).seconds.do(job_func)
             self.logger.debug(f"排程任務：每 {seconds} 秒")
     
     def _check_posts(self) -> None:
@@ -102,7 +106,7 @@ class Scheduler:
         
         try:
             while not self._stop_event:
-                schedule.run_pending()
+                self.scheduler.run_pending()
                 time.sleep(1)  # 1 秒間隔，確保秒數精度
         except KeyboardInterrupt:
             self._stop_event = True
