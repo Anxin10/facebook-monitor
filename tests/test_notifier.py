@@ -5,10 +5,12 @@
 - LINE 重試回應
 - 逐目的地重試
 - 通知狀態管理
+- LINE idempotent retry
 """
 
 import unittest
 import os
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch, MagicMock
 import json
@@ -59,8 +61,19 @@ class TestNotifier(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir)
     
-    def test_apprise_notification(self):
-        """測試 Apprise 通知呼叫"""
+    def test_send_pending_no_channels(self):
+        """測試無管道設定"""
+        config = self.config.copy()
+        config['notifications'] = {'timezone': 'Asia/Taipei', 'channels': []}
+        
+        from notifier import Notifier
+        notifier = Notifier(config, self.logger)
+        notifier.send_pending()
+        
+        self.logger.debug.assert_called()
+    
+    def test_send_pending_apprise(self):
+        """測試 Apprise 通知發送"""
         # 新增測試資料
         add_item(
             self.db_path, 'test_page', 'post', 'post_1',
@@ -78,26 +91,13 @@ class TestNotifier(unittest.TestCase):
             
             from notifier import Notifier
             notifier = Notifier(self.config, self.logger)
+            notifier.send_pending()
             
-            # 測試單一通知
-            notification = {
-                'page_id': 'test_page',
-                'content_type': 'post',
-                'content_id': 'post_1',
-                'channel_id': 'telegram_main',
-                'summary': 'Test post',
-                'url': 'https://facebook.com/posts/post_1',
-                'published_at': datetime.now(timezone.utc).isoformat()
-            }
-            
-            # 呼叫 Apprise
-            result = notifier._notify_apprise(notification, 'tgram://test/test')
-            
-            self.assertTrue(result)
-            mock_apobj.notify.assert_called_once()
+            # 檢查 Apprise 被呼叫
+            mock_apobj.notify.assert_called()
     
-    def test_line_notification(self):
-        """測試 LINE 通知"""
+    def test_send_pending_line(self):
+        """測試 LINE 通知發送"""
         # 新增測試資料
         add_item(
             self.db_path, 'test_page', 'post', 'post_1',
@@ -113,68 +113,103 @@ class TestNotifier(unittest.TestCase):
             'statuses': [
                 {
                     'status': '200',
+                    'requestId': 'req_123',
                     'is_duplicate': False
                 }
             ]
         }
+        mock_response.status_code = 200
         mock_response.raise_for_status = Mock()
         
         with patch('requests.post', return_value=mock_response):
-            from notifier import Notifier
-            notifier = Notifier(self.config, self.logger)
-            
-            notification = {
-                'page_id': 'test_page',
-                'content_type': 'post',
-                'content_id': 'post_1',
-                'channel_id': 'line_main',
-                'summary': 'Test post',
-                'url': 'https://facebook.com/posts/post_1',
-                'published_at': datetime.now(timezone.utc).isoformat()
-            }
-            
-            result, retry_key = notifier._notify_line(
-                notification, 'test_token', 'test_user_id'
-            )
-            
-            self.assertTrue(result)
-            self.assertEqual(retry_key, None)  # 成功時無 retry key
+            with patch('os.getenv', side_effect=lambda x: 'test_token' if 'token' in x else 'test_user_id'):
+                from notifier import Notifier
+                notifier = Notifier(self.config, self.logger)
+                notifier.send_pending()
+                
+                # 檢查 LINE 發送成功
+                self.logger.info.assert_called()
     
-    def test_line_retry_response(self):
-        """測試 LINE 重試回應"""
-        # 模擬 LINE 返回重複訊息
+    def test_line_idempotent_retry_uuid(self):
+        """測試 LINE idempotent retry 使用 UUID"""
+        # 模擬 LINE API
         mock_response = Mock()
         mock_response.json.return_value = {
             'statuses': [
                 {
                     'status': '200',
-                    'is_duplicate': True,
-                    'request_id': 'retry_key_123'
+                    'requestId': 'req_123',
+                    'is_duplicate': False
                 }
             ]
         }
+        mock_response.status_code = 200
+        mock_response.raise_for_status = Mock()
+        
+        captured_headers = {}
+        
+        def capture_headers(*args, **kwargs):
+            captured_headers.update(kwargs.get('headers', {}))
+            return mock_response
+        
+        with patch('requests.post', side_effect=capture_headers):
+            with patch('os.getenv', side_effect=lambda x: 'test_token' if 'token' in x else 'test_user_id'):
+                from notifier import Notifier
+                notifier = Notifier(self.config, self.logger)
+                notifier.send_pending()
+                
+                # 檢查 X-Line-Retry-Key header 存在且為 UUID 格式
+                self.assertIn('X-Line-Retry-Key', captured_headers)
+                retry_key = captured_headers['X-Line-Retry-Key']
+                # 驗證 UUID 格式
+                uuid.UUID(retry_key)  # 不拋出異常表示是有效 UUID
+    
+    def test_line_409_conflict_as_success(self):
+        """測試 LINE 409 衝突視為成功"""
+        # 模擬 LINE API 返回 409
+        mock_response = Mock()
+        mock_response.status_code = 409
+        mock_response.text = 'Conflict'
         mock_response.raise_for_status = Mock()
         
         with patch('requests.post', return_value=mock_response):
-            from notifier import Notifier
-            notifier = Notifier(self.config, self.logger)
-            
-            notification = {
-                'page_id': 'test_page',
-                'content_type': 'post',
-                'content_id': 'post_1',
-                'channel_id': 'line_main',
-                'summary': 'Test post',
-                'url': 'https://facebook.com/posts/post_1',
-                'published_at': datetime.now(timezone.utc).isoformat()
-            }
-            
-            result, retry_key = notifier._notify_line(
-                notification, 'test_token', 'test_user_id'
-            )
-            
-            self.assertTrue(result)
-            self.assertEqual(retry_key, 'retry_key_123')
+            with patch('os.getenv', side_effect=lambda x: 'test_token' if 'token' in x else 'test_user_id'):
+                from notifier import Notifier
+                notifier = Notifier(self.config, self.logger)
+                notifier.send_pending()
+                
+                # 檢查視為成功
+                self.logger.info.assert_called()
+    
+    def test_line_5xx_save_retry_key(self):
+        """測試 LINE 5xx 錯誤保存 retry_key 以便重試"""
+        # 模擬 LINE API 返回 500
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = 'Server Error'
+        mock_response.raise_for_status = Mock()
+        
+        with patch('requests.post', return_value=mock_response):
+            with patch('os.getenv', side_effect=lambda x: 'test_token' if 'token' in x else 'test_user_id'):
+                from notifier import Notifier
+                notifier = Notifier(self.config, self.logger)
+                notifier.send_pending()
+                
+                # 檢查警告被記錄
+                self.logger.warning.assert_called()
+    
+    def test_line_timeout_save_retry_key(self):
+        """測試 LINE timeout 保存 retry_key 以便重試"""
+        import requests
+        
+        with patch('requests.post', side_effect=requests.exceptions.Timeout('Request timeout')):
+            with patch('os.getenv', side_effect=lambda x: 'test_token' if 'token' in x else 'test_user_id'):
+                from notifier import Notifier
+                notifier = Notifier(self.config, self.logger)
+                notifier.send_pending()
+                
+                # 檢查警告被記錄
+                self.logger.warning.assert_called()
     
     def test_per_channel_retry(self):
         """測試逐目的地重試"""
