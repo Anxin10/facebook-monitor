@@ -39,6 +39,28 @@ globalThis.FBMonitor = (() => {
         break;
       }
     }
+    if (posts.size === 0) {
+      for (const anchor of root.querySelectorAll('a[href]')) {
+        const url = postUrl(anchor.href, target);
+        if (!url || posts.has(url)) continue;
+        let container = anchor.parentElement;
+        let text = "";
+        for (let i = 0; i < 10 && container; i++) {
+          const msg = container.querySelector('[data-ad-preview="message"], [data-ad-comet-preview="message"]');
+          if (msg && msg.innerText && msg.innerText.trim().length > 10) {
+            text = msg.innerText;
+            break;
+          }
+          const textBlocks = [...container.querySelectorAll('div[dir="auto"]')].map(d => d.innerText.trim()).filter(t => t.length > 20);
+          if (textBlocks.length > 0) {
+            text = textBlocks[0];
+            break;
+          }
+          container = container.parentElement;
+        }
+        posts.set(url, {url, summary: (text || "").slice(0, 4000)});
+      }
+    }
     return [...posts.values()].slice(0, 50);
   }
   return {pageKey, postUrl, extract};

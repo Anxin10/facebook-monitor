@@ -149,6 +149,9 @@ class BackgroundReader:
                 raise ReadUnavailable("target_redirected")
         except ValueError:
             raise ReadUnavailable("target_redirected") from None
+        page.wait_for_timeout(1500)
+        page.mouse.wheel(0, 500)
+        page.wait_for_timeout(1000)
         page.evaluate(PARSER)
         try:
             page.wait_for_function(
