@@ -16,6 +16,8 @@
 
 完整操作：[BROWSER_SETUP.md](BROWSER_SETUP.md)。架構與限制：[facebook-monitor-design.md](facebook-monitor-design.md)。
 
+目前規劃是先驗收單一粉專的真實登入、讀取與通知，再量測連續背景運行的資源負擔；這些實機步驟尚未由自動測試代替。
+
 ## 行為
 
 - 登入設定檔固定在 `.runtime.local/profile`，不匯出 Cookie，不使用日常 Chrome／Edge 設定檔。
