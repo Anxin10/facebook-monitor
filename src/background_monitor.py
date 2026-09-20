@@ -25,6 +25,55 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def is_within_active_hours(config, now_dt=None):
+    """檢查指定時間是否在允許巡邏的時段內 (例如 08:00 - 21:00)"""
+    posts_config = (
+        config.get("posts", {})
+        if isinstance(config, dict)
+        else getattr(config, "posts_config", {})
+    )
+    active_hours = posts_config.get("active_hours")
+    if not active_hours or not active_hours.get("enabled", True):
+        return True, now_dt, None
+
+    start_str = active_hours.get("start", "08:00")
+    end_str = active_hours.get("end", "21:00")
+    tz_name = active_hours.get("timezone", "Asia/Taipei")
+
+    from zoneinfo import ZoneInfo
+    from datetime import datetime as dt_cls, time, timedelta
+
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = timezone.utc
+
+    if now_dt is None:
+        now_dt = dt_cls.now(tz)
+    elif now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=timezone.utc).astimezone(tz)
+    else:
+        now_dt = now_dt.astimezone(tz)
+
+    start_h, start_m = map(int, start_str.split(":"))
+    end_h, end_m = map(int, end_str.split(":"))
+    start_time = time(start_h, start_m)
+    end_time = time(end_h, end_m)
+
+    current_time = now_dt.time()
+    today_start = dt_cls.combine(now_dt.date(), start_time, tzinfo=tz)
+
+    if start_time <= current_time <= end_time:
+        return True, now_dt, None
+
+    if current_time > end_time:
+        next_start = today_start + timedelta(days=1)
+    else:
+        next_start = today_start
+
+    return False, now_dt, next_start
+
+
 @contextmanager
 def instance_lock(runtime):
     """OS lock is released on crash; login and monitoring cannot share a profile."""
@@ -170,7 +219,14 @@ class BackgroundReader:
             raise ReadUnavailable("no_recognizable_posts")
         return {"page_id": str(target["page_id"]), "page_url": page.url, "posts": posts}
 
-    def poll(self):
+    def poll(self, force=False):
+        if not force:
+            within, _, next_start = is_within_active_hours(self.store.config)
+            if not within:
+                self.state.set("phase", "idle_outside_active_hours")
+                if next_start:
+                    self.state.set("next_active_at", next_start.isoformat())
+                return
         if self.state.get("login_required", True):
             self.state.set("phase", "login_required")
             return

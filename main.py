@@ -16,6 +16,7 @@ from src.background_monitor import (
     RuntimeState,
     import_cookies,
     instance_lock,
+    is_within_active_hours,
     manual_login,
     now,
 )
@@ -41,7 +42,7 @@ def configure_logging():
     return logging.getLogger(__name__)
 
 
-def run_monitor(reader, state, notifier, interval, once=False):
+def run_monitor(reader, state, notifier, interval, once=False, config=None):
     state.set("stop_requested", False)
     state.set("pid", os.getpid())
     state.set("started_at", now())
@@ -55,7 +56,22 @@ def run_monitor(reader, state, notifier, interval, once=False):
                 state.set("heartbeat_at", now())
                 next_heartbeat = current + 15
             if current >= next_check:
-                reader.poll()
+                if not once and config:
+                    within, now_local, next_start = is_within_active_hours(config)
+                    if not within:
+                        state.set("phase", "idle_outside_active_hours")
+                        if next_start:
+                            state.set("next_active_at", next_start.isoformat())
+                            wait_seconds = min(60.0, max(5.0, (next_start - now_local).total_seconds()))
+                            next_check = time.monotonic() + wait_seconds
+                        else:
+                            next_check = time.monotonic() + 60.0
+                        if time.monotonic() >= next_notify:
+                            notifier.send_pending()
+                            next_notify = time.monotonic() + 30
+                        time.sleep(1)
+                        continue
+                reader.poll(force=once)
                 # Delay from completion, never overlap or catch up after sleep.
                 next_check = time.monotonic() + interval
             if state.get("stop_requested", False):
@@ -155,6 +171,7 @@ def main():
             Notifier(config, logger),
             interval,
             once=args.command == "check",
+            config=config,
         )
 
 

@@ -13,6 +13,7 @@ from src.background_monitor import (
     ReadUnavailable,
     import_cookies,
     instance_lock,
+    is_within_active_hours,
     manual_login,
     parse_cookie_data,
 )
@@ -180,4 +181,48 @@ class TestBackgroundMonitor(unittest.TestCase):
         with self.assertRaises(LoginRequired):
             import_cookies(self.root / "profile", self.state, "c_user=expired", self.factory)
         self.assertTrue(self.state.get("login_required"))
+
+    def test_active_hours_restriction(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Asia/Taipei")
+        config = {
+            "posts": {
+                "interval_seconds": 3600,
+                "active_hours": {
+                    "enabled": True,
+                    "start": "08:00",
+                    "end": "21:00",
+                    "timezone": "Asia/Taipei",
+                },
+            }
+        }
+
+        # 1. 早上 08:00 (在範圍內)
+        t_0800 = datetime(2026, 9, 21, 8, 0, 0, tzinfo=tz)
+        within, _, _ = is_within_active_hours(config, t_0800)
+        self.assertTrue(within)
+
+        # 2. 下午 14:30 (在範圍內)
+        t_1430 = datetime(2026, 9, 21, 14, 30, 0, tzinfo=tz)
+        within, _, _ = is_within_active_hours(config, t_1430)
+        self.assertTrue(within)
+
+        # 3. 晚上 21:00 (剛好在結束邊界內)
+        t_2100 = datetime(2026, 9, 21, 21, 0, 0, tzinfo=tz)
+        within, _, _ = is_within_active_hours(config, t_2100)
+        self.assertTrue(within)
+
+        # 4. 晚上 22:30 (超過晚上九點，不在範圍內)
+        t_2230 = datetime(2026, 9, 21, 22, 30, 0, tzinfo=tz)
+        within, _, next_start = is_within_active_hours(config, t_2230)
+        self.assertFalse(within)
+        self.assertEqual(next_start, datetime(2026, 9, 22, 8, 0, 0, tzinfo=tz))
+
+        # 5. 清晨 06:30 (早上八點前，不在範圍內)
+        t_0630 = datetime(2026, 9, 21, 6, 30, 0, tzinfo=tz)
+        within, _, next_start = is_within_active_hours(config, t_0630)
+        self.assertFalse(within)
+        self.assertEqual(next_start, datetime(2026, 9, 21, 8, 0, 0, tzinfo=tz))
 
