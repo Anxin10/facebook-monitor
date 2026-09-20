@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Facebook Monitor Companion",
+  "version": "1.0.0",
+  "description": "將使用者瀏覽的指定粉專貼文傳送到本機監控器。",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_popup": "popup.html"},
+  "content_scripts": [{
+    "matches": ["https://www.facebook.com/*"],
+    "js": ["parser.js", "content.js"],
+    "run_at": "document_idle"
+  }]
+}
