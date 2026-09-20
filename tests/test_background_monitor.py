@@ -11,8 +11,10 @@ from src.background_monitor import (
     RuntimeState,
     LoginRequired,
     ReadUnavailable,
+    import_cookies,
     instance_lock,
     manual_login,
+    parse_cookie_data,
 )
 from src.database import init_database, get_pending_notifications
 from src.observation_store import BrowserStore
@@ -154,3 +156,28 @@ class TestBackgroundMonitor(unittest.TestCase):
             run_monitor(reader, self.state, notifier, 300)
         reader.poll.assert_called_once()
         self.assertEqual(self.state.get("phase"), "stopped")
+
+    def test_parse_cookie_data_header_string_and_json(self):
+        header = "c_user=10001; xs=sec_tok; datr=dev_id"
+        parsed = parse_cookie_data(header)
+        self.assertEqual(len(parsed), 3)
+        self.assertEqual(parsed[0], {"name": "c_user", "value": "10001", "domain": ".facebook.com", "path": "/"})
+
+        json_arr = '[{"name": "c_user", "value": "20002", "domain": ".facebook.com"}]'
+        parsed_json = parse_cookie_data(json_arr)
+        self.assertEqual(parsed_json[0]["name"], "c_user")
+        self.assertEqual(parsed_json[0]["value"], "20002")
+
+    def test_import_cookies_success_and_saves_state(self):
+        self.page.url = "https://www.facebook.com/"
+        import_cookies(self.root / "profile", self.state, "c_user=10001; xs=sec_tok", self.factory)
+        self.assertFalse(self.state.get("login_required"))
+        self.assertEqual(self.state.get("phase"), "login_saved_unverified")
+        self.context.add_cookies.assert_called_once()
+
+    def test_import_cookies_failed_when_still_login_required(self):
+        self.page.url = "https://www.facebook.com/login/"
+        with self.assertRaises(LoginRequired):
+            import_cookies(self.root / "profile", self.state, "c_user=expired", self.factory)
+        self.assertTrue(self.state.get("login_required"))
+

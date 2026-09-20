@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from src.background_monitor import (
     BackgroundReader,
     RuntimeState,
+    import_cookies,
     instance_lock,
     manual_login,
     now,
@@ -77,7 +78,7 @@ def main():
         "command",
         nargs="?",
         default="run",
-        choices=["run", "check", "login", "status", "stop", "enable", "pause"],
+        choices=["run", "check", "login", "import-cookie", "status", "stop", "enable", "pause"],
     )
     parser.add_argument("page_id", nargs="?")
     args = parser.parse_args()
@@ -123,6 +124,20 @@ def main():
     with instance_lock(RUNTIME):
         if args.command == "login":
             manual_login(RUNTIME / "profile", state)
+            return
+        if args.command == "import-cookie":
+            cookie_file = ROOT / "cookie.txt"
+            if cookie_file.exists() and cookie_file.stat().st_size > 0:
+                raw = cookie_file.read_text(encoding="utf-8").strip()
+                print("從 cookie.txt 讀取 Cookie 中...")
+            elif os.environ.get("FB_COOKIE"):
+                raw = os.environ.get("FB_COOKIE").strip()
+                print("從環境變數 FB_COOKIE 讀取 Cookie 中...")
+            else:
+                print("請貼上您的 Facebook Cookie（格式如 c_user=...; xs=... 或 JSON 陣列），完成後按 Enter：")
+                raw = input().strip()
+            import_cookies(RUNTIME / "profile", state, raw)
+            print("✅ 成功匯入 Cookie 並通過 Facebook 登入驗證！")
             return
         if not store.targets:
             raise ValueError("No enabled targets")

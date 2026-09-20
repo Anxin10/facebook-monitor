@@ -305,3 +305,83 @@ def manual_login(profile, state, factory=sync_playwright):
             state.set("login_saved_at", now())
         finally:
             context.close()
+
+
+def parse_cookie_data(raw: str):
+    """Parse cookie from JSON array or 'key=value;' header string."""
+    raw = raw.strip()
+    if not raw:
+        raise ValueError("Cookie 資料不可為空")
+    if raw.startswith("["):
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                result = []
+                for item in data:
+                    if "name" in item and "value" in item:
+                        domain = item.get("domain", ".facebook.com")
+                        if not domain.startswith("."):
+                            domain = f".{domain}"
+                        result.append({
+                            "name": str(item["name"]),
+                            "value": str(item["value"]),
+                            "domain": domain,
+                            "path": item.get("path", "/"),
+                        })
+                if result:
+                    return result
+        except Exception:
+            pass
+
+    result = []
+    parts = [p.strip() for chunk in raw.split("\n") for p in chunk.split(";") if p.strip()]
+    for part in parts:
+        if "=" in part:
+            name, val = part.split("=", 1)
+            name = name.strip()
+            val = val.strip()
+            if name:
+                result.append({
+                    "name": name,
+                    "value": val,
+                    "domain": ".facebook.com",
+                    "path": "/",
+                })
+    if not result:
+        raise ValueError("無法解析出有效的 Cookie 鍵值對")
+    return result
+
+
+def import_cookies(profile, state, cookie_raw: str, factory=sync_playwright):
+    """Import user-provided cookie string or JSON directly into the browser profile."""
+    cookies = parse_cookie_data(cookie_raw)
+    state.set("login_required", True)
+    with factory() as playwright:
+        context = playwright.chromium.launch_persistent_context(
+            str(profile),
+            channel=BROWSER_CHANNEL,
+            headless=True,
+            accept_downloads=False,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
+            ],
+            ignore_default_args=["--enable-automation"],
+        )
+        if hasattr(context, "add_init_script"):
+            context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
+        try:
+            context.add_cookies(cookies)
+            page = context.pages[0] if context.pages else context.new_page()
+            page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
+            if login_required(page):
+                raise LoginRequired("匯入的 Cookie 無法通過 Facebook 登入驗證（可能已失效或缺少 c_user/xs）")
+            state.set("login_required", False)
+            state.set("phase", "login_saved_unverified")
+            state.set("login_saved_at", now())
+        finally:
+            context.close()
+
