@@ -62,9 +62,23 @@ class BrowserStore:
     def __init__(self, config):
         self.config = config
         self.path = config.get("storage", {}).get("database", "monitor.sqlite3")
-        self.targets = [t for t in config.get("targets", []) if t.get("enabled")]
-        for target in self.targets:
-            page_key(target["url"])
+        raw_targets = config.get("targets", [])
+        self.targets = []
+        for t in raw_targets:
+            if isinstance(t, str):
+                t = {"url": t, "enabled": True}
+            elif isinstance(t, dict):
+                t = dict(t)
+            else:
+                continue
+            if not t.get("enabled", True):
+                continue
+            url = t.get("url", "")
+            key = page_key(url)
+            if not t.get("page_id"):
+                t["page_id"] = key
+            t["enabled"] = True
+            self.targets.append(t)
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute(
                 """CREATE TABLE IF NOT EXISTS browser_state (
