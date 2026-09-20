@@ -1,3 +1,8 @@
+
+三、線上服務驗證情況回顧
+Telegram 通知：✅ 測試通過，已成功發送訊息至指定 Chat ID。
+LINE 通知：❌ 待換 Token（目前填的是 32 碼 Channel Secret，需換為 LINE Developers Console 發行的長版 Channel Access Token）。
+Facebook Graph API：❌ 待換 Token（目前 Token 僅具備 public_profile，需在 Graph API Explorer 勾選 pages_read_engagement 並選取粉專以取得 Page Access Token）。
 # Facebook 背景貼文監控架構
 
 版本：3.0；日期：2026-09-20。

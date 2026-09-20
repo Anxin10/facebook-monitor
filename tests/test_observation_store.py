@@ -126,3 +126,45 @@ class TestObservationStore(unittest.TestCase):
         )
         self.assertEqual(identity, "abc")
         self.assertNotIn("tracking", url)
+
+    def test_keyword_filtering_ingest(self):
+        config_with_filter = self.config.copy()
+        config_with_filter["filters"] = {"enabled": True, "keywords": ["陀螺"]}
+        store = BrowserStore(config_with_filter)
+        store.ingest(self.payload())
+        store.arm("123", True)
+
+        # 貼文包含「陀螺」
+        p_match = {
+            "page_id": "123",
+            "page_url": self.target["url"],
+            "posts": [
+                {
+                    "url": "https://www.facebook.com/example/posts/pmatch?tracking=1",
+                    "summary": "戰鬥陀螺抽籤開跑",
+                }
+            ],
+        }
+        # 貼文不包含「陀螺」
+        p_no_match = {
+            "page_id": "123",
+            "page_url": self.target["url"],
+            "posts": [
+                {
+                    "url": "https://www.facebook.com/example/posts/pnomatch?tracking=1",
+                    "summary": "樂高積木特賣",
+                }
+            ],
+        }
+        store.ingest(p_match)
+        store.ingest(p_no_match)
+
+        # 兩則貼文都記錄在 items（用來避免重複看見）
+        with closing(sqlite3.connect(self.path)) as db:
+            items_count = db.execute("SELECT count(*) FROM items").fetchone()[0]
+            self.assertEqual(items_count, 3)
+
+        # 但只有符合「陀螺」的貼文被排入 notifications
+        pending = get_pending_notifications(self.path)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["content_id"], "pmatch")

@@ -30,7 +30,7 @@
    ```
 2. 執行首次手動登入（這是唯一會開可見瀏覽器的步驟）：
    ```powershell
-   .venv\Scripts\python.exe -X utf8 main.py login
+   python -X utf8 main.py login
    ```
    *於彈出的視窗中登入 Facebook，完成後回到終端機按 Enter 關閉。*
 
@@ -53,15 +53,15 @@
 **步驟：**
 1. 手動執行一次檢查：
    ```powershell
-   .venv\Scripts\python.exe -X utf8 main.py check
+   python -X utf8 main.py check
    ```
 2. 查看狀態，確認目標已觀察到貼文（observed）：
    ```powershell
-   .venv\Scripts\python.exe -X utf8 main.py status
+   python -X utf8 main.py status
    ```
 3. 確認基準已建立後，正式啟用通知推播：
    ```powershell
-   .venv\Scripts\python.exe -X utf8 main.py enable 目標粉專ID
+   python -X utf8 main.py enable 目標粉專ID
    ```
 
 ### 4. 啟用 Windows 開機自啟無感背景運行

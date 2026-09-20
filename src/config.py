@@ -66,6 +66,11 @@ class Config:
         return self._config.get("notifications", {})
 
     @property
+    def filters_config(self) -> Dict[str, Any]:
+        """取得過濾器設定"""
+        return self._config.get("filters", {})
+
+    @property
     def logging_config(self) -> Dict[str, Any]:
         """取得日誌設定"""
         return self._config.get("logging", {})

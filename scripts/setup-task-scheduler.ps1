@@ -1,4 +1,4 @@
-﻿﻿<#
+﻿<#
 .SYNOPSIS
     註冊或移除 Facebook 監控的 Windows 工作排程器（開機登入自動靜默背景啟動）。
 
@@ -35,12 +35,18 @@ param (
 $ErrorActionPreference = 'Stop'
 $TaskName = "FacebookMonitor"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$pythonw = Join-Path $projectRoot ".venv\Scripts\pythonw.exe"
 $mainPy = Join-Path $projectRoot "main.py"
+
+# 自動偵測目前啟用的 Python 環境 (支援 Conda / 系統 Python)
+$pythonw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
+if (-not $pythonw) {
+    # 預設退回專案目錄的 .venv
+    $pythonw = Join-Path $projectRoot ".venv\Scripts\pythonw.exe"
+}
 
 function Check-Environment {
     if (-not (Test-Path -LiteralPath $pythonw)) {
-        throw "找不到 pythonw.exe，請先執行 powershell -File scripts/setup-background.ps1 建立虛擬環境。"
+        throw "找不到 pythonw.exe，請確認您已啟用 Conda 環境 (例如 conda activate facebook-monitor) 或已建立 .venv。"
     }
     if (-not (Test-Path -LiteralPath $mainPy)) {
         throw "找不到 main.py，請確認腳本位於專案目錄內。"
@@ -131,5 +137,5 @@ Start-Sleep -Seconds 2
 
 $info = Get-ScheduledTask -TaskName $TaskName
 Write-Host "[+] 排程工作目前狀態: $($info.State)" -ForegroundColor Green
-Write-Host "如需查看運行狀態請執行: .venv\Scripts\python.exe -X utf8 main.py status" -ForegroundColor Gray
+Write-Host "如需查看運行狀態請執行: python -X utf8 main.py status (需先啟動 Conda 虛擬環境)" -ForegroundColor Gray
 Write-Host "如需移除排程請執行: powershell -File scripts/setup-task-scheduler.ps1 -Uninstall" -ForegroundColor Gray

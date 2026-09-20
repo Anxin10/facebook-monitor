@@ -458,6 +458,114 @@ class TestNotifier(unittest.TestCase):
             mock_ap.add.assert_called_once_with("tgram://test_token/test_chat")
             mock_ap.notify.assert_called_once()
 
+    def test_store_labeling_and_clean_summary(self):
+        """測試通知內容標註門市來源與清理除錯前綴"""
+        from notifier import Notifier
+
+        config = {
+            "storage": {"database": self.db_path},
+            "targets": [
+                {
+                    "name": "台北忠孝遠東SOGO",
+                    "page_id": "funboxsogo",
+                    "url": "https://www.facebook.com/funboxsogo",
+                    "line_id": "@lcn7452p",
+                }
+            ],
+            "notifications": {"timezone": "Asia/Taipei", "channels": []},
+        }
+
+        notifier = Notifier(config, self.logger)
+        notification = {
+            "page_id": "funboxsogo",
+            "content_type": "post",
+            "content_id": "p1",
+            "summary": "[瀏覽器首次看見；非發文時間] 戰鬥陀螺抽籤活動！",
+            "url": "https://www.facebook.com/funboxsogo/posts/1",
+            "published_at": "2026-09-20T12:00:00+00:00",
+        }
+
+        msg = notifier._build_message(notification)
+        self.assertIn("來源門市：【台北忠孝遠東SOGO】", msg)
+        self.assertIn("門市 LINE：@lcn7452p", msg)
+        self.assertIn("戰鬥陀螺抽籤活動！", msg)
+        self.assertNotIn("[瀏覽器首次看見；非發文時間] ", msg)
+
+    def test_keyword_filtering(self):
+        """測試關鍵字過濾（只發送含指定關鍵字的貼文）"""
+        from notifier import Notifier
+
+        config = {
+            "storage": {"database": self.db_path},
+            "filters": {"enabled": True, "keywords": ["陀螺"]},
+            "notifications": {
+                "timezone": "Asia/Taipei",
+                "channels": [
+                    {
+                        "id": "telegram_filter",
+                        "backend": "apprise",
+                        "url": "tgram://token/chat",
+                    }
+                ],
+            },
+        }
+
+        # 貼文 1：包含「陀螺」
+        add_item(
+            self.db_path,
+            "p1",
+            "post",
+            "post_match",
+            summary="全新戰鬥陀螺 X 發售公告",
+            url="https://fb.com/1",
+        )
+        add_notifications(
+            self.db_path,
+            "p1",
+            "post",
+            "post_match",
+            [{"id": "telegram_filter", "backend": "apprise"}],
+        )
+
+        # 貼文 2：不包含「陀螺」
+        add_item(
+            self.db_path,
+            "p1",
+            "post",
+            "post_no_match",
+            summary="寶可夢卡牌特別販售公告",
+            url="https://fb.com/2",
+        )
+        add_notifications(
+            self.db_path,
+            "p1",
+            "post",
+            "post_no_match",
+            [{"id": "telegram_filter", "backend": "apprise"}],
+        )
+
+        with patch("notifier.apprise.Apprise") as mock_apprise_class:
+            mock_ap = Mock()
+            mock_ap.notify.return_value = True
+            mock_apprise_class.return_value = mock_ap
+
+            notifier = Notifier(config, self.logger)
+            notifier.send_pending()
+
+            # 只發送了一則（符合關鍵字的那則）
+            self.assertEqual(mock_ap.notify.call_count, 1)
+            call_kwargs = mock_ap.notify.call_args[1]
+            self.assertIn("戰鬥陀螺", call_kwargs["body"])
+
+        # 驗證資料庫狀態：不符合的應標記為 filtered_out
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        rows = {r["content_id"]: r["status"] for r in conn.execute("SELECT content_id, status FROM notifications")}
+        conn.close()
+
+        self.assertEqual(rows["post_match"], "sent")
+        self.assertEqual(rows["post_no_match"], "filtered_out")
+
 
 if __name__ == "__main__":
     unittest.main()

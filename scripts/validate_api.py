@@ -22,8 +22,10 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-# 加入 src 路徑
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# 加入專案根目錄與 src 路徑
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 try:
     import requests

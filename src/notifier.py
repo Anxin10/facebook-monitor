@@ -20,6 +20,8 @@ except ImportError:
     APPRISE_AVAILABLE = False
 
 
+from dotenv import load_dotenv
+
 from src.database import get_pending_notifications, update_notification_status
 
 
@@ -41,11 +43,32 @@ class Notifier:
         self.channels = self.notifications_config.get("channels", [])
         self.timezone_name = self.notifications_config.get("timezone", "Asia/Taipei")
 
+    def _get_target_info(self, page_id: str) -> Dict[str, Any]:
+        """從設定中依 page_id 取得門市資訊（名稱、LINE ID 等）"""
+        targets = self.config.get("targets", [])
+        pid_str = str(page_id).lower()
+        for t in targets:
+            if str(t.get("page_id", "")).lower() == pid_str:
+                return t
+            u = t.get("url", "")
+            if pid_str in u.lower():
+                return t
+        return {}
+
     def send_pending(self) -> None:
         """發送所有待處理通知，依 channel_id 分別處理"""
+        load_dotenv(override=True)
+        if hasattr(self.config, "reload"):
+            self.config.reload()
+            self.channels = self.config.get("notifications", {}).get("channels", [])
+
         if not self.channels:
             self.logger.debug("通知管道未設定")
             return
+
+        filters = self.config.get("filters", {})
+        filter_enabled = filters.get("enabled", True)
+        keywords = [str(k).strip() for k in filters.get("keywords", []) if str(k).strip()]
 
         # 依 channel_id 分別取得待發送通知
         for channel_config in self.channels:
@@ -65,13 +88,31 @@ class Notifier:
                 self.logger.debug(f"Channel {channel_id}: 無待發送通知")
                 continue
 
-            self.logger.info(f"Channel {channel_id}: 找到 {len(pending)} 則待發送通知")
+            # 關鍵字過濾檢查
+            filtered_pending = []
+            for notification in pending:
+                summary = notification.get("summary", "")
+                if filter_enabled and keywords:
+                    if not any(k.lower() in summary.lower() for k in keywords):
+                        self.logger.info(
+                            f"貼文未包含指定關鍵字 {keywords}，跳過發送：{notification.get('content_id')}"
+                        )
+                        update_notification_status(
+                            self.db_path, notification["id"], "filtered_out"
+                        )
+                        continue
+                filtered_pending.append(notification)
+
+            if not filtered_pending:
+                continue
+
+            self.logger.info(f"Channel {channel_id}: 找到 {len(filtered_pending)} 則待發送通知")
 
             # 依後端發送
             if backend == "apprise":
-                self._send_via_apprise(channel_config, pending)
+                self._send_via_apprise(channel_config, filtered_pending)
             elif backend == "line":
-                self._send_via_line(channel_config, pending)
+                self._send_via_line(channel_config, filtered_pending)
             else:
                 self.logger.warning(f"Channel {channel_id}: 未知的後端 {backend}")
 
@@ -83,6 +124,10 @@ class Notifier:
         summary = notification.get("summary", "")
         url = notification.get("url", "")
         published_at = notification.get("published_at")
+
+        target_info = self._get_target_info(page_id)
+        store_name = target_info.get("name")
+        store_line_id = target_info.get("line_id")
 
         # 內容類型文字
         type_text = (
@@ -106,18 +151,30 @@ class Notifier:
                 time_text = f"發布時間：{published_at}"
 
         # 建立訊息
-        message = f"🔔 Facebook 新內容通知\n"
-        message += f"粉專：{page_id}\n"
+        message = "🔔 Facebook 新內容通知\n"
+        if store_name:
+            message += f"來源門市：【{store_name}】\n"
+            message += f"粉專：{page_id}\n"
+        else:
+            message += f"來源粉專：{page_id}\n"
+
+        if store_line_id:
+            message += f"門市 LINE：{store_line_id}\n"
+
         message += f"類型：{type_text}\n"
 
         if time_text:
             message += f"{time_text}\n"
 
-        if summary:
-            message += f"\n內容：{summary[:200]}\n"
+        clean_summary = summary
+        if clean_summary.startswith("[瀏覽器首次看見；非發文時間] "):
+            clean_summary = clean_summary[len("[瀏覽器首次看見；非發文時間] "):]
+
+        if clean_summary:
+            message += f"\n內容：\n{clean_summary[:300]}\n"
 
         if url:
-            message += f"\n連結：{url}\n"
+            message += f"\n貼文連結：{url}\n"
 
         return message
 
