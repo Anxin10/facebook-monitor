@@ -1,5 +1,7 @@
 # Facebook 監控：現成 repo 比較與混合實作
 
+> 本文件為早期 Graph API 方案的比較與實作紀錄，並非目前主程式架構。現行瀏覽器版本的運行前提、延遲定義與限制，以 [facebook-monitor-design.md](facebook-monitor-design.md) 為準；安裝請見 [BROWSER_SETUP.md](BROWSER_SETUP.md)。
+
 日期：2026-09-19。此報告依 GitHub metadata、下載的程式碼與官方文件整理；沒有真實 Meta Token 或通知接收設定，因此尚未完成線上驗證。
 
 ## 選擇
