@@ -17,6 +17,14 @@ def page_key(value):
         key = parse_qs(url.query).get("id", [""])[0]
         if key.isdigit():
             return key
+    elif path.startswith("p/"):
+        match = re.search(r"/p/(?:.*-)?(\d+)", url.path)
+        if match:
+            return match.group(1)
+    elif path.startswith("people/"):
+        match = re.search(r"/people/(?:[^/]+/)+(\d+)", url.path)
+        if match:
+            return match.group(1)
     elif re.fullmatch(r"[A-Za-z0-9.]+", path) and path.lower() not in {
         "home.php",
         "login",

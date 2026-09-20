@@ -78,7 +78,7 @@ def main():
         "command",
         nargs="?",
         default="run",
-        choices=["run", "check", "login", "import-cookie", "status", "stop", "enable", "pause"],
+        choices=["run", "check", "login", "import-cookie", "import-sheets", "status", "stop", "enable", "pause"],
     )
     parser.add_argument("page_id", nargs="?")
     args = parser.parse_args()
@@ -115,6 +115,11 @@ def main():
         return
     if args.command == "stop":
         state.set("stop_requested", True)
+        return
+    if args.command == "import-sheets":
+        from scripts.import_sheets import import_sheets
+        custom_urls = [args.page_id] if args.page_id else None
+        import_sheets(custom_urls)
         return
     if args.command in {"enable", "pause"}:
         if not args.page_id:

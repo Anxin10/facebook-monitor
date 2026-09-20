@@ -6,6 +6,10 @@ globalThis.FBMonitor = (() => {
       if (u.origin !== "https://www.facebook.com") return null;
       const path = u.pathname.replace(/^\/|\/$/g, "");
       if (path === "profile.php") return /^\d+$/.test(u.searchParams.get("id") || "") ? u.searchParams.get("id") : null;
+      const pMatch = path.match(/^p\/(?:.*-)?(\d+)$/);
+      if (pMatch) return pMatch[1];
+      const peopleMatch = path.match(/^people\/(?:[^\/]+\/)+(\d+)$/);
+      if (peopleMatch) return peopleMatch[1];
       return /^[A-Za-z0-9.]+$/.test(path) ? path.toLowerCase() : null;
     } catch { return null; }
   }
