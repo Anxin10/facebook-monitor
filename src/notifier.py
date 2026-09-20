@@ -196,10 +196,15 @@ class Notifier:
             return
 
         channel_token = os.getenv(token_env)
-        recipient = os.getenv(recipient_env)
+        recipient_raw = os.getenv(recipient_env)
 
-        if not channel_token or not recipient:
+        if not channel_token or not recipient_raw:
             self.logger.error(f"環境變數 {token_env} 或 {recipient_env} 未設定")
+            return
+
+        recipients = [r.strip() for r in recipient_raw.split(",") if r.strip()]
+        if not recipients:
+            self.logger.error(f"環境變數 {recipient_env} 未包含有效的接收者 ID")
             return
 
         url = "https://api.line.me/v2/bot/message/push"
@@ -212,104 +217,103 @@ class Notifier:
         for notification in notifications:
             message = self._build_message(notification)
 
-            payload = {"to": recipient, "messages": [{"type": "text", "text": message}]}
-
             # 從資料庫讀取已存儲的 retry_key（重試時沿用）
             retry_key = notification.get("retry_key")
-
-            # 如果沒有 retry_key，生成新的 UUID
             if not retry_key:
                 retry_key = str(uuid.uuid4())
 
-            # 加入 X-Line-Retry-Key header
-            headers["X-Line-Retry-Key"] = retry_key
+            for idx, recipient in enumerate(recipients):
+                payload = {"to": recipient, "messages": [{"type": "text", "text": message}]}
+                target_retry_key = f"{retry_key}_{idx}" if len(recipients) > 1 else retry_key
+                headers["X-Line-Retry-Key"] = target_retry_key
 
-            try:
-                response = requests.post(url, json=payload, headers=headers, timeout=10)
+                try:
+                    response = requests.post(url, json=payload, headers=headers, timeout=10)
 
-                # LINE push 接受請求時回傳 2xx；請求 ID 在 response header。
-                if 200 <= response.status_code < 300:
-                    request_id = response.headers.get("x-line-request-id")
-                    suffix = f"（request_id={request_id}）" if request_id else ""
-                    self.logger.info(
-                        f"LINE 通知發送成功：{notification.get('content_id')}{suffix}"
-                    )
-                    update_notification_status(
-                        self.db_path,
-                        notification["id"],
-                        "sent",
-                        retry_key=retry_key,
-                    )
+                    # LINE push 接受請求時回傳 2xx；請求 ID 在 response header。
+                    if 200 <= response.status_code < 300:
+                        request_id = response.headers.get("x-line-request-id")
+                        suffix = f"（request_id={request_id}）" if request_id else ""
+                        self.logger.info(
+                            f"LINE 通知發送成功：{notification.get('content_id')}{suffix}"
+                        )
+                        update_notification_status(
+                            self.db_path,
+                            notification["id"],
+                            "sent",
+                            retry_key=retry_key,
+                        )
 
-                # 409 衝突視為已成功接受（冪等）
-                elif response.status_code == 409:
-                    accepted_request_id = response.headers.get(
-                        "x-line-accepted-request-id"
-                    )
-                    suffix = (
-                        f"（accepted_request_id={accepted_request_id}）"
-                        if accepted_request_id
-                        else ""
-                    )
-                    self.logger.info(
-                        f"LINE 通知 409 衝突（視為已接受）："
-                        f"{notification.get('content_id')}{suffix}"
-                    )
-                    update_notification_status(
-                        self.db_path, notification["id"], "sent", retry_key=retry_key
-                    )
+                    # 409 衝突視為已成功接受（冪等）
+                    elif response.status_code == 409:
+                        accepted_request_id = response.headers.get(
+                            "x-line-accepted-request-id"
+                        )
+                        suffix = (
+                            f"（accepted_request_id={accepted_request_id}）"
+                            if accepted_request_id
+                            else ""
+                        )
+                        self.logger.info(
+                            f"LINE 通知 409 衝突（視為已接受）："
+                            f"{notification.get('content_id')}{suffix}"
+                        )
+                        update_notification_status(
+                            self.db_path, notification["id"], "sent", retry_key=retry_key
+                        )
 
-                # 5xx 伺服器錯誤：保存 retry_key 以便重試沿用
-                elif 500 <= response.status_code < 600:
-                    error_msg = (
-                        f"LINE API 5xx 錯誤：{response.status_code}: {response.text}"
-                    )
-                    self.logger.warning(f"LINE 通知伺服器錯誤：{error_msg}")
+                    # 5xx 伺服器錯誤：保存 retry_key 以便重試沿用
+                    elif 500 <= response.status_code < 600:
+                        error_msg = (
+                            f"LINE API 5xx 錯誤：{response.status_code}: {response.text}"
+                        )
+                        self.logger.warning(f"LINE 通知伺服器錯誤：{error_msg}")
+                        update_notification_status(
+                            self.db_path,
+                            notification["id"],
+                            "retry",
+                            f"5xx 伺服器錯誤：{response.text}",
+                            retry_key=retry_key,
+                        )
+
+                    # 其他錯誤
+                    else:
+                        error_msg = f"LINE API 返回 {response.status_code}: {response.text}"
+                        self.logger.error(f"LINE 通知發送失敗：{error_msg}")
+                        update_notification_status(
+                            self.db_path,
+                            notification["id"],
+                            "failed",
+                            error_msg,
+                            retry_key=retry_key,
+                        )
+
+                except requests.exceptions.Timeout:
+                    # timeout：保存 retry_key 以便重試沿用
+                    self.logger.warning(f"LINE 通知超時：{notification.get('content_id')}")
                     update_notification_status(
                         self.db_path,
                         notification["id"],
                         "retry",
-                        f"5xx 伺服器錯誤：{response.text}",
+                        "請求超時",
                         retry_key=retry_key,
                     )
-
-                # 其他錯誤
-                else:
-                    error_msg = f"LINE API 返回 {response.status_code}: {response.text}"
-                    self.logger.error(f"LINE 通知發送失敗：{error_msg}")
+                except requests.exceptions.RequestException as e:
+                    self.logger.error(f"LINE 通知請求失敗：{e}")
                     update_notification_status(
                         self.db_path,
                         notification["id"],
-                        "failed",
-                        error_msg,
+                        "retry",
+                        str(e),
+                        retry_key=retry_key,
+                    )
+                except Exception as e:
+                    self.logger.error(f"LINE 通知發送異常：{e}")
+                    update_notification_status(
+                        self.db_path,
+                        notification["id"],
+                        "retry",
+                        str(e),
                         retry_key=retry_key,
                     )
 
-            except requests.exceptions.Timeout:
-                # timeout：保存 retry_key 以便重試沿用
-                self.logger.warning(f"LINE 通知超時：{notification.get('content_id')}")
-                update_notification_status(
-                    self.db_path,
-                    notification["id"],
-                    "retry",
-                    "請求超時",
-                    retry_key=retry_key,
-                )
-            except requests.exceptions.RequestException as e:
-                self.logger.error(f"LINE 通知請求失敗：{e}")
-                update_notification_status(
-                    self.db_path,
-                    notification["id"],
-                    "retry",
-                    str(e),
-                    retry_key=retry_key,
-                )
-            except Exception as e:
-                self.logger.error(f"LINE 通知發送異常：{e}")
-                update_notification_status(
-                    self.db_path,
-                    notification["id"],
-                    "retry",
-                    str(e),
-                    retry_key=retry_key,
-                )
