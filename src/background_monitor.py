@@ -282,6 +282,8 @@ def manual_login(profile, state, factory=sync_playwright):
             accept_downloads=False,
             args=[
                 "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
             ],
             ignore_default_args=["--enable-automation"],
         )
