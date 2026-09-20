@@ -17,6 +17,7 @@ python-json-logger==2.0.7
 
 # 工具
 python-dateutil==2.9.0.post0
+tzdata==2025.2
 
 # Dedicated headless browser and process resource measurements
 playwright==1.58.0

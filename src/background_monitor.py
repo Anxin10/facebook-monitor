@@ -43,10 +43,7 @@ def is_within_active_hours(config, now_dt=None):
     from zoneinfo import ZoneInfo
     from datetime import datetime as dt_cls, time, timedelta
 
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = timezone.utc
+    tz = ZoneInfo(tz_name)
 
     if now_dt is None:
         now_dt = dt_cls.now(tz)
@@ -381,31 +378,37 @@ def parse_cookie_data(raw: str):
                         domain = item.get("domain", ".facebook.com")
                         if not domain.startswith("."):
                             domain = f".{domain}"
-                        result.append({
-                            "name": str(item["name"]),
-                            "value": str(item["value"]),
-                            "domain": domain,
-                            "path": item.get("path", "/"),
-                        })
+                        result.append(
+                            {
+                                "name": str(item["name"]),
+                                "value": str(item["value"]),
+                                "domain": domain,
+                                "path": item.get("path", "/"),
+                            }
+                        )
                 if result:
                     return result
         except Exception:
             pass
 
     result = []
-    parts = [p.strip() for chunk in raw.split("\n") for p in chunk.split(";") if p.strip()]
+    parts = [
+        p.strip() for chunk in raw.split("\n") for p in chunk.split(";") if p.strip()
+    ]
     for part in parts:
         if "=" in part:
             name, val = part.split("=", 1)
             name = name.strip()
             val = val.strip()
             if name:
-                result.append({
-                    "name": name,
-                    "value": val,
-                    "domain": ".facebook.com",
-                    "path": "/",
-                })
+                result.append(
+                    {
+                        "name": name,
+                        "value": val,
+                        "domain": ".facebook.com",
+                        "path": "/",
+                    }
+                )
     if not result:
         raise ValueError("無法解析出有效的 Cookie 鍵值對")
     return result
@@ -437,10 +440,11 @@ def import_cookies(profile, state, cookie_raw: str, factory=sync_playwright):
             page = context.pages[0] if context.pages else context.new_page()
             page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
             if login_required(page):
-                raise LoginRequired("匯入的 Cookie 無法通過 Facebook 登入驗證（可能已失效或缺少 c_user/xs）")
+                raise LoginRequired(
+                    "匯入的 Cookie 無法通過 Facebook 登入驗證（可能已失效或缺少 c_user/xs）"
+                )
             state.set("login_required", False)
             state.set("phase", "login_saved_unverified")
             state.set("login_saved_at", now())
         finally:
             context.close()
-

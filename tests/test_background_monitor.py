@@ -162,7 +162,15 @@ class TestBackgroundMonitor(unittest.TestCase):
         header = "c_user=10001; xs=sec_tok; datr=dev_id"
         parsed = parse_cookie_data(header)
         self.assertEqual(len(parsed), 3)
-        self.assertEqual(parsed[0], {"name": "c_user", "value": "10001", "domain": ".facebook.com", "path": "/"})
+        self.assertEqual(
+            parsed[0],
+            {
+                "name": "c_user",
+                "value": "10001",
+                "domain": ".facebook.com",
+                "path": "/",
+            },
+        )
 
         json_arr = '[{"name": "c_user", "value": "20002", "domain": ".facebook.com"}]'
         parsed_json = parse_cookie_data(json_arr)
@@ -171,7 +179,9 @@ class TestBackgroundMonitor(unittest.TestCase):
 
     def test_import_cookies_success_and_saves_state(self):
         self.page.url = "https://www.facebook.com/"
-        import_cookies(self.root / "profile", self.state, "c_user=10001; xs=sec_tok", self.factory)
+        import_cookies(
+            self.root / "profile", self.state, "c_user=10001; xs=sec_tok", self.factory
+        )
         self.assertFalse(self.state.get("login_required"))
         self.assertEqual(self.state.get("phase"), "login_saved_unverified")
         self.context.add_cookies.assert_called_once()
@@ -179,8 +189,17 @@ class TestBackgroundMonitor(unittest.TestCase):
     def test_import_cookies_failed_when_still_login_required(self):
         self.page.url = "https://www.facebook.com/login/"
         with self.assertRaises(LoginRequired):
-            import_cookies(self.root / "profile", self.state, "c_user=expired", self.factory)
+            import_cookies(
+                self.root / "profile", self.state, "c_user=expired", self.factory
+            )
         self.assertTrue(self.state.get("login_required"))
+
+    def test_invalid_timezone_does_not_silently_use_utc(self):
+        from zoneinfo import ZoneInfoNotFoundError
+
+        config = {"posts": {"active_hours": {"timezone": "Invalid/Zone"}}}
+        with self.assertRaises(ZoneInfoNotFoundError):
+            is_within_active_hours(config)
 
     def test_active_hours_restriction(self):
         from datetime import datetime
@@ -225,4 +244,3 @@ class TestBackgroundMonitor(unittest.TestCase):
         within, _, next_start = is_within_active_hours(config, t_0630)
         self.assertFalse(within)
         self.assertEqual(next_start, datetime(2026, 9, 21, 8, 0, 0, tzinfo=tz))
-

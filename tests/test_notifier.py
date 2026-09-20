@@ -560,7 +560,10 @@ class TestNotifier(unittest.TestCase):
         # 驗證資料庫狀態：不符合的應標記為 filtered_out
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        rows = {r["content_id"]: r["status"] for r in conn.execute("SELECT content_id, status FROM notifications")}
+        rows = {
+            r["content_id"]: r["status"]
+            for r in conn.execute("SELECT content_id, status FROM notifications")
+        }
         conn.close()
 
         self.assertEqual(rows["post_match"], "sent")

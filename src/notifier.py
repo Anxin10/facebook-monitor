@@ -68,7 +68,9 @@ class Notifier:
 
         filters = self.config.get("filters", {})
         filter_enabled = filters.get("enabled", True)
-        keywords = [str(k).strip() for k in filters.get("keywords", []) if str(k).strip()]
+        keywords = [
+            str(k).strip() for k in filters.get("keywords", []) if str(k).strip()
+        ]
 
         # 依 channel_id 分別取得待發送通知
         for channel_config in self.channels:
@@ -106,7 +108,9 @@ class Notifier:
             if not filtered_pending:
                 continue
 
-            self.logger.info(f"Channel {channel_id}: 找到 {len(filtered_pending)} 則待發送通知")
+            self.logger.info(
+                f"Channel {channel_id}: 找到 {len(filtered_pending)} 則待發送通知"
+            )
 
             # 依後端發送
             if backend == "apprise":
@@ -168,7 +172,7 @@ class Notifier:
 
         clean_summary = summary
         if clean_summary.startswith("[瀏覽器首次看見；非發文時間] "):
-            clean_summary = clean_summary[len("[瀏覽器首次看見；非發文時間] "):]
+            clean_summary = clean_summary[len("[瀏覽器首次看見；非發文時間] ") :]
 
         if clean_summary:
             message += f"\n內容：\n{clean_summary[:300]}\n"
@@ -280,12 +284,19 @@ class Notifier:
                 retry_key = str(uuid.uuid4())
 
             for idx, recipient in enumerate(recipients):
-                payload = {"to": recipient, "messages": [{"type": "text", "text": message}]}
-                target_retry_key = f"{retry_key}_{idx}" if len(recipients) > 1 else retry_key
+                payload = {
+                    "to": recipient,
+                    "messages": [{"type": "text", "text": message}],
+                }
+                target_retry_key = (
+                    f"{retry_key}_{idx}" if len(recipients) > 1 else retry_key
+                )
                 headers["X-Line-Retry-Key"] = target_retry_key
 
                 try:
-                    response = requests.post(url, json=payload, headers=headers, timeout=10)
+                    response = requests.post(
+                        url, json=payload, headers=headers, timeout=10
+                    )
 
                     # LINE push 接受請求時回傳 2xx；請求 ID 在 response header。
                     if 200 <= response.status_code < 300:
@@ -316,14 +327,15 @@ class Notifier:
                             f"{notification.get('content_id')}{suffix}"
                         )
                         update_notification_status(
-                            self.db_path, notification["id"], "sent", retry_key=retry_key
+                            self.db_path,
+                            notification["id"],
+                            "sent",
+                            retry_key=retry_key,
                         )
 
                     # 5xx 伺服器錯誤：保存 retry_key 以便重試沿用
                     elif 500 <= response.status_code < 600:
-                        error_msg = (
-                            f"LINE API 5xx 錯誤：{response.status_code}: {response.text}"
-                        )
+                        error_msg = f"LINE API 5xx 錯誤：{response.status_code}: {response.text}"
                         self.logger.warning(f"LINE 通知伺服器錯誤：{error_msg}")
                         update_notification_status(
                             self.db_path,
@@ -335,7 +347,9 @@ class Notifier:
 
                     # 其他錯誤
                     else:
-                        error_msg = f"LINE API 返回 {response.status_code}: {response.text}"
+                        error_msg = (
+                            f"LINE API 返回 {response.status_code}: {response.text}"
+                        )
                         self.logger.error(f"LINE 通知發送失敗：{error_msg}")
                         update_notification_status(
                             self.db_path,
@@ -347,7 +361,9 @@ class Notifier:
 
                 except requests.exceptions.Timeout:
                     # timeout：保存 retry_key 以便重試沿用
-                    self.logger.warning(f"LINE 通知超時：{notification.get('content_id')}")
+                    self.logger.warning(
+                        f"LINE 通知超時：{notification.get('content_id')}"
+                    )
                     update_notification_status(
                         self.db_path,
                         notification["id"],
@@ -373,4 +389,3 @@ class Notifier:
                         str(e),
                         retry_key=retry_key,
                     )
-

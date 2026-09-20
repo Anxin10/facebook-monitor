@@ -184,7 +184,11 @@ class BrowserStore:
                     # 關鍵字過濾：若有設定 filters.keywords，僅包含關鍵字的貼文才建立通知
                     filters = self.config.get("filters", {})
                     filter_enabled = filters.get("enabled", True)
-                    keywords = [str(k).strip() for k in filters.get("keywords", []) if str(k).strip()]
+                    keywords = [
+                        str(k).strip()
+                        for k in filters.get("keywords", [])
+                        if str(k).strip()
+                    ]
                     if filter_enabled and keywords:
                         if not any(k.lower() in summary.lower() for k in keywords):
                             continue
