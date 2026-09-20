@@ -1,42 +1,156 @@
-"""Run the browser receiver and notification scheduler."""
+"""Dedicated background browser monitor; visible UI only for explicit login."""
 
+import argparse
+import json
 import logging
-import threading
+import os
+import sys
+import time
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from dotenv import load_dotenv
-from src.browser_receiver import BrowserStore, load_pairing_token, make_server
+
+from src.background_monitor import (
+    BackgroundReader,
+    RuntimeState,
+    instance_lock,
+    manual_login,
+    now,
+)
 from src.config import Config
 from src.database import init_database
-from src.scheduler import Scheduler
+from src.notifier import Notifier
+from src.observation_store import BrowserStore
+
+ROOT = Path(__file__).resolve().parent
+RUNTIME = ROOT / ".runtime.local"
+
+
+def configure_logging():
+    RUNTIME.mkdir(exist_ok=True)
+    handler = RotatingFileHandler(
+        RUNTIME / "monitor.log", maxBytes=2 * 1024**2, backupCount=3, encoding="utf-8"
+    )
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[handler],
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    return logging.getLogger(__name__)
+
+
+def run_monitor(reader, state, notifier, interval, once=False):
+    state.set("stop_requested", False)
+    state.set("pid", os.getpid())
+    state.set("started_at", now())
+    next_check = 0.0
+    next_notify = 0.0
+    next_heartbeat = 0.0
+    try:
+        while not state.get("stop_requested", False):
+            current = time.monotonic()
+            if current >= next_heartbeat:
+                state.set("heartbeat_at", now())
+                next_heartbeat = current + 15
+            if current >= next_check:
+                reader.poll()
+                # Delay from completion, never overlap or catch up after sleep.
+                next_check = time.monotonic() + interval
+            if state.get("stop_requested", False):
+                break
+            if time.monotonic() >= next_notify:
+                notifier.send_pending()
+                next_notify = time.monotonic() + 30
+            if once:
+                break
+            time.sleep(1)
+    finally:
+        state.set("phase", "stopped")
+        state.set("stopped_at", now())
+        state.set("pid", None)
 
 
 def main():
-    load_dotenv()
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    parser = argparse.ArgumentParser(description="Background Facebook observations")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="run",
+        choices=["run", "check", "login", "status", "stop", "enable", "pause"],
     )
-    logger = logging.getLogger(__name__)
+    parser.add_argument("page_id", nargs="?")
+    args = parser.parse_args()
+    os.chdir(ROOT)
+    load_dotenv(ROOT / ".env")
+    logger = configure_logging()
     config = Config()
-    if config.posts_config.get("source") != "browser":
-        raise ValueError('Set posts.source to "browser"')
-    init_database(config.storage_config.get("database", "monitor.sqlite3"))
-    server = make_server(BrowserStore(config), load_pairing_token())
-    worker = threading.Thread(target=server.serve_forever, daemon=True)
-    worker.start()
-    logger.info(
-        "Browser receiver: http://127.0.0.1:8765; pairing token: browser-token.local"
-    )
-    if not config.notifications_config.get("channels"):
-        logger.warning(
-            "No notification channels configured; observations will only be stored"
+    if config.posts_config.get("source") != "background_browser":
+        raise ValueError("posts.source must be background_browser")
+    interval = config.posts_config.get("interval_seconds", 300)
+    if not isinstance(interval, int) or interval < 60:
+        raise ValueError("interval_seconds must be an integer >= 60")
+    db_path = config.storage_config.get("database", "monitor.sqlite3")
+    init_database(db_path)
+    store = BrowserStore(config)
+    state = RuntimeState(db_path)
+    if args.command == "status":
+        try:
+            with instance_lock(RUNTIME):
+                active = False
+        except RuntimeError:
+            active = True
+        print(
+            json.dumps(
+                {
+                    "process_active": active,
+                    "runtime": state.snapshot(),
+                    "targets": store.status(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         )
-    try:
-        Scheduler(config, logger).run()
-    finally:
-        server.shutdown()
-        server.server_close()
-        worker.join()
+        return
+    if args.command == "stop":
+        state.set("stop_requested", True)
+        return
+    if args.command in {"enable", "pause"}:
+        if not args.page_id:
+            parser.error("enable/pause requires page_id")
+        store.arm(args.page_id, args.command == "enable")
+        return
+    with instance_lock(RUNTIME):
+        if args.command == "login":
+            manual_login(RUNTIME / "profile", state)
+            return
+        if not store.targets:
+            raise ValueError("No enabled targets")
+        if not config.notifications_config.get("channels"):
+            logger.warning("No notification channels: observations only")
+        reader = BackgroundReader(RUNTIME / "profile", store, state)
+        run_monitor(
+            reader,
+            state,
+            Notifier(config, logger),
+            interval,
+            once=args.command == "check",
+        )
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+    except Exception as error:
+        # Quiet launch must never trigger a dialog or expose raw browser/session data.
+        logging.getLogger(__name__).error("Monitor stopped: %s", type(error).__name__)
+        if sys.stderr is not None:
+            print(
+                "執行失敗："
+                + type(error).__name__
+                + "；請查看 .runtime.local/monitor.log",
+                file=sys.stderr,
+            )
+        raise SystemExit(1)

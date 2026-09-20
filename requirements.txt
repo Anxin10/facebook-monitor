@@ -1,8 +1,5 @@
 # Facebook 監控系統依賴
 
-# 排程
-schedule==1.2.2
-
 # HTTP 請求
 requests==2.32.3
 
@@ -20,3 +17,7 @@ python-json-logger==2.0.7
 
 # 工具
 python-dateutil==2.9.0.post0
+
+# Dedicated headless browser and process resource measurements
+playwright==1.58.0
+psutil==7.0.0

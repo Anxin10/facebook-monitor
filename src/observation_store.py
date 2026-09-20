@@ -1,13 +1,9 @@
-"""Authenticated loopback ingestion for the companion browser extension."""
+"""Validated observations and transactional notification outbox."""
 
-import hmac
 import json
 import re
-import secrets
 import sqlite3
 from contextlib import closing
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 
@@ -179,89 +175,3 @@ class BrowserStore:
                 (page_id, page_id),
             )
         return {"inserted": inserted, "armed": bool(armed)}
-
-
-def load_pairing_token():
-    path = Path("browser-token.local")
-    if not path.exists():
-        with path.open("x", encoding="utf-8") as file:
-            file.write(secrets.token_urlsafe(32))
-    token = path.read_text(encoding="utf-8").strip()
-    if len(token) < 32:
-        raise ValueError("browser-token.local must contain at least 32 characters")
-    return token
-
-
-def make_server(store, token, port=8765):
-    class Handler(BaseHTTPRequestHandler):
-        def setup(self):
-            super().setup()
-            self.connection.settimeout(5)
-
-        def log_message(self, *_args):
-            pass
-
-        def reply(self, status, body):
-            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
-
-        def authorized(self):
-            origin = self.headers.get("Origin", "")
-            if origin and not re.fullmatch(r"chrome-extension://[a-p]{32}", origin):
-                self.reply(403, {"error": "Forbidden origin"})
-                return False
-            if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
-                self.reply(403, {"error": "Invalid host"})
-                return False
-            if not hmac.compare_digest(
-                self.headers.get("Authorization", "").encode("utf-8"),
-                ("Bearer " + token).encode("utf-8"),
-            ):
-                self.reply(401, {"error": "Pairing required"})
-                return False
-            return True
-
-        def do_GET(self):
-            if self.authorized():
-                if self.path == "/status":
-                    self.reply(200, {"targets": store.status()})
-                else:
-                    self.reply(404, {"error": "Not found"})
-
-        def do_POST(self):
-            if not self.authorized():
-                return
-            try:
-                size = int(self.headers.get("Content-Length", "0"))
-                if not 0 < size <= 262144:
-                    raise ValueError("Invalid request size")
-                if self.headers.get("Content-Type") != "application/json":
-                    raise ValueError("Expected JSON")
-                payload = json.loads(self.rfile.read(size))
-                if not isinstance(payload, dict):
-                    raise ValueError("Expected object")
-                if self.path == "/observations":
-                    result = store.ingest(payload)
-                elif self.path == "/arm":
-                    store.arm(payload.get("page_id"), payload.get("armed"))
-                    result = {"ok": True}
-                else:
-                    self.reply(404, {"error": "Not found"})
-                    return
-                self.reply(200, result)
-            except (ValueError, TypeError, AttributeError, UnicodeError):
-                self.reply(
-                    400,
-                    {
-                        "error": "Invalid request; check target URL, post URLs and baseline"
-                    },
-                )
-            except sqlite3.Error:
-                self.reply(503, {"error": "Storage unavailable; retry later"})
-
-    return HTTPServer(("127.0.0.1", port), Handler)

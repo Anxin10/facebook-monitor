@@ -10,7 +10,8 @@ targets:
 
 # 貼文監控設定
 posts:
-  source: "browser"
+  source: "background_browser"
+  interval_seconds: 300
 
 # 限時動態設定（尚未實作）
 stories:

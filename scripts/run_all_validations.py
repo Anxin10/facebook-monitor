@@ -34,7 +34,8 @@ def check_requirements():
     required_packages = [
         ("requests", "requests"),
         ("yaml", "PyYAML"),
-        ("schedule", "schedule"),
+        ("playwright", "playwright"),
+        ("psutil", "psutil"),
     ]
 
     missing = []

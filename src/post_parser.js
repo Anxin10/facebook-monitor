@@ -1,4 +1,4 @@
-/* Pure URL matching shared by the content script, worker and offline tests. */
+/* Read-only DOM parser evaluated inside the dedicated background browser. */
 globalThis.FBMonitor = (() => {
   function pageKey(value) {
     try {

@@ -1,51 +1,39 @@
-# Facebook 瀏覽器貼文監控
+# Facebook 背景貼文監控
 
-Chrome／Edge 擴充功能觀察使用者開啟的指定粉專頁面，交由本機 Python 服務儲存、去重，再以 Telegram／LINE／Email 通知。瀏覽器模式不需要 Facebook Access Token 或 PPCA。
+使用獨立設定檔的無頭 Edge，每 5 分鐘依序讀取指定粉專已載入的貼文，保存到 SQLite，並透過 Telegram／LINE／Email 通知。平常不用開 Facebook 分頁；不操作你的日常瀏覽器，不開可見視窗或搶焦點。
 
-## 快速開始
+這是背景讀取原型，尚未完成真實 Facebook 登入與通知收訊驗收。頁面改版、登入驗證與存取限制可能使讀取失敗；不保證完整收集或全天候可用。
 
-1. 安裝 Python 3.10+，執行 `python -m pip install -r requirements.txt`。
-2. 編輯 `config.yaml` 中的目標粉專網址、ID 與通知管道；將通知憑證存入 `.env`。
-3. 在專案目錄執行 `python -X utf8 main.py`（Windows Conda 使用 `conda run --live-stream -n facebook-monitor python -X utf8 main.py`）。
-4. 在 Chrome／Edge 擴充功能管理頁開啟開發人員模式，載入本專案 `extension` 資料夾。
-5. 將啟動時產生的 `browser-token.local` 配對碼貼入擴充功能。
-6. 開啟目標粉專，瀏覽舊貼文建立基準，再按「基準確認，開始通知」。
+## Windows 快速開始
 
-完整操作與驗收方式：[瀏覽器安裝指南](BROWSER_SETUP.md)。
+1. 執行 `powershell -File scripts/setup-background.ps1` 安裝 Python 依賴並確認 Windows 已安裝 Edge。
+2. 編輯 `config.yaml` 的目標與通知管道，通知憑證放在 `.env`。
+3. 執行 `.venv\Scripts\python.exe -X utf8 main.py login`，自行登入後回終端機按 Enter。只有此指令會開可見瀏覽器。
+4. 雙擊 `start-background.vbs`，無視窗啟動；每輪共用一個分頁，完成後釋放瀏覽器。
+5. 執行 `.venv\Scripts\python.exe -X utf8 main.py status` 查看基準及健康狀態。
+6. 首次成功觀察不通知。確認目標已有基準後，執行 `.venv\Scripts\python.exe -X utf8 main.py enable 你的粉專ID`。
+7. 要停止時雙擊 `stop-background.vbs`。正在處理的請求需等到完成或逾時。
 
-運行前提、延遲定義與事件觸發改進方向：[架構文件](facebook-monitor-design.md)。指定粉專分頁及本機服務必須持續運行；保持分頁開啟不保證 Facebook 自動載入新貼文。
+完整操作：[BROWSER_SETUP.md](BROWSER_SETUP.md)。架構與限制：[facebook-monitor-design.md](facebook-monitor-design.md)。
 
 ## 行為
 
-- 首次觀察不通知，需明確啟用；基準與貼文 ID 持久化於 SQLite。
-- 寫入貼文與待發通知使用單一交易；每個通知管道獨立追蹤及重試。
-- 本機接收器只綁定 `127.0.0.1:8765`，要求隨機配對碼；不收集 Cookie 或 Facebook Token。
-- 只處理設定目標的可辨識貼文連結，不會自動刷新、捲動或呼叫 Facebook 私有 API。
-- popup 顯示連線、通知狀態、累計篇數及最近收到觀察的時間。
+- 登入設定檔固定在 `.runtime.local/profile`，不匯出 Cookie，不使用日常 Chrome／Edge 設定檔。
+- 登入或驗證失效時停止後續讀取，不自動彈出登入頁；由你停止服務、手動登入、重新啟動。
+- 一輪一個瀏覽器、一個分頁、逐粉專讀取；擋下圖片、影音及字型請求；每輪結束關閉瀏覽器。
+- 低資源是設計目標，並非已達成固定記憶體上限。狀態提供程序樹 RSS／CPU 時間取樣與每輪耗時。
+- 首次看見的舊文也可能通知；訊息不把觀察時間當成發布時間。
+- 預設 `channels: []` 只儲存，不發送。基準、貼文去重和通知佇列沿用 SQLite。
+- 已移除常開分頁的擴充功能與本機 HTTP 接收器。既有 SQLite 內容保留，不需要舊配對碼。
 
-**這是首次看見的貼文通知，不是完整的新發文監控。** 舊文首次載入仍可能通知；關閉或休眠分頁後會停止觀察。只支援桌面版粉專首頁與一般貼文 permalink，Reels、限時動態與社團不支援。實際 Facebook 版面變更可能使解析失效。
-
-## 測試
+## 驗證
 
 ```powershell
-python -X utf8 -m unittest discover -s tests -v
-node --test extension/*.test.cjs
+.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests -v
+node --test tests/parser.test.cjs
+.venv\Scripts\python.exe -X utf8 scripts/smoke-background.py
 ```
 
-GitHub Actions 執行 Python 測試及擴充功能離線測試。實際 Facebook 頁面和通知收訊需另行驗收，離線測試不代表已通過線上驗收。
+瀏覽器 smoke test 在真實瀏覽器中載入本機合成 DOM，測試解析→入庫→去重→模擬通知；所有頁面請求都攔截，不連 Facebook。Windows 使用 Edge，Linux CI 使用 Playwright Chromium。這不代表線上驗收已通過。
 
-## 模組
-
-- `extension/`：Manifest V3 擴充功能、貼文辨識、配對與狀態面板。
-- `src/browser_receiver.py`：本機接收、目標驗證、基準與交易。
-- `src/database.py`：SQLite 資料與通知佇列。
-- `src/notifier.py`：Apprise／LINE 通知與重試。
-- `src/scheduler.py`：通知排程。
-
-原有 Graph API 工具與測試保留供獨立 API 診斷，主程式不會將它們當作瀏覽器失敗時的替代路徑。舊版設計文件中的 Graph API 啟動說明不適用於本版本。
-
-## 開發參考
-
-[Chrome 擴充功能跨來源請求](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests) · [Chrome storage](https://developer.chrome.com/docs/extensions/reference/api/storage)
-
-本機憑證、配對碼與資料庫不可提交到 GitHub。
+登入設定檔、配對憑證、資料庫與日誌不可上傳 GitHub。

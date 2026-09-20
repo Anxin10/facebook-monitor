@@ -1,7 +1,8 @@
 # 測試與驗證指南
 
-目前主程式使用瀏覽器觀察，安裝與實機驗收請參閱 [BROWSER_SETUP.md](BROWSER_SETUP.md)。
-執行 `python -X utf8 -m unittest discover -s tests -v` 與 `node --test extension/*.test.cjs`。
+目前主程式使用背景無頭瀏覽器，安裝與實機驗收請參閱 [BROWSER_SETUP.md](BROWSER_SETUP.md)。
+執行 `python -X utf8 -m unittest discover -s tests -v` 與 `node --test tests/parser.test.cjs`。
+Windows 使用已安裝 Edge，Linux 先安裝 Playwright Chromium，再執行 `python scripts/smoke-background.py` 驗證合成 DOM 的解析、入庫與模擬通知。此測試不連 Facebook，也不能代替線上驗收。
 下方 Graph API 驗證是獨立工具，不是瀏覽器模式的必要條件。
 
 本文檔說明如何執行離線測試和線上驗證。

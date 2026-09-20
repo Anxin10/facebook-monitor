@@ -1,22 +1,19 @@
-"""Browser ingestion: atomic outbox, baseline, ownership and HTTP boundary."""
+"""Observations: atomic outbox, baseline and ownership."""
 
-import http.client
-import json
 import sqlite3
 from contextlib import closing
 import tempfile
-import threading
 import unittest
 import logging
 from unittest.mock import patch
 from pathlib import Path
 
-from src.browser_receiver import BrowserStore, make_server, page_key, post_identity
+from src.observation_store import BrowserStore, page_key, post_identity
 from src.database import init_database, get_pending_notifications
 from src.notifier import Notifier
 
 
-class TestBrowserReceiver(unittest.TestCase):
+class TestObservationStore(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -129,66 +126,3 @@ class TestBrowserReceiver(unittest.TestCase):
         )
         self.assertEqual(identity, "abc")
         self.assertNotIn("tracking", url)
-
-    def test_http_auth_validation_and_delivery(self):
-        token = "x" * 40
-        server = make_server(self.store, token, port=0)
-        worker = threading.Thread(target=server.serve_forever, daemon=True)
-        worker.start()
-        try:
-
-            def request(method, path, body=None, headers=None):
-                conn = http.client.HTTPConnection(
-                    "127.0.0.1", server.server_port, timeout=3
-                )
-                try:
-                    conn.request(method, path, body, headers or {})
-                    result = conn.getresponse()
-                    return result.status, json.loads(result.read())
-                finally:
-                    conn.close()
-
-            self.assertEqual(request("GET", "/status")[0], 401)
-            headers = {
-                "Authorization": "Bearer " + token,
-                "Content-Type": "application/json",
-            }
-            self.assertEqual(
-                request(
-                    "GET",
-                    "/status",
-                    headers={**headers, "Origin": "https://www.facebook.com"},
-                )[0],
-                403,
-            )
-            self.assertEqual(
-                request("GET", "/status", headers={**headers, "Host": "evil.test"})[0],
-                403,
-            )
-            self.assertEqual(request("POST", "/observations", "[]", headers)[0], 400)
-            self.assertEqual(
-                request("POST", "/observations", json.dumps(self.payload()), headers)[
-                    0
-                ],
-                200,
-            )
-            self.assertEqual(
-                request(
-                    "POST",
-                    "/arm",
-                    json.dumps({"page_id": "123", "armed": True}),
-                    headers,
-                )[0],
-                200,
-            )
-            self.assertEqual(
-                request(
-                    "POST", "/observations", json.dumps(self.payload("two")), headers
-                )[0],
-                200,
-            )
-            self.assertEqual(len(get_pending_notifications(self.path)), 1)
-        finally:
-            server.shutdown()
-            server.server_close()
-            worker.join()

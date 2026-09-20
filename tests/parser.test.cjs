@@ -1,6 +1,6 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-require('./parser.js');
+require('../src/post_parser.js');
 const {pageKey, postUrl, extract} = globalThis.FBMonitor;
 const target = {page_id: '123', url: 'https://www.facebook.com/example'};
 test('normalizes profile and vanity Page URLs; rejects foreign hosts', () => {
