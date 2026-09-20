@@ -184,7 +184,15 @@ class BackgroundReader:
                     permissions=[],
                     viewport={"width": 1280, "height": 900},
                     timeout=20000,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                    ],
+                    ignore_default_args=["--enable-automation"],
                 )
+                if hasattr(context, "add_init_script"):
+                    context.add_init_script(
+                        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+                    )
                 try:
                     context.route(
                         "**/*",
@@ -272,7 +280,15 @@ def manual_login(profile, state, factory=sync_playwright):
             channel=BROWSER_CHANNEL,
             headless=False,
             accept_downloads=False,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+            ],
+            ignore_default_args=["--enable-automation"],
         )
+        if hasattr(context, "add_init_script"):
+            context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
         try:
             page = context.pages[0] if context.pages else context.new_page()
             page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
