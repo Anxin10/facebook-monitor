@@ -30,19 +30,14 @@ notifications:
   timezone: Asia/Taipei
   notify_existing_on_first_run: false  # 首次基準不通知既有內容
   notify_post_edits: false
-  channels: []
-  # 範例：
-  # channels:
-  #   - id: telegram_main
-  #     backend: apprise
-  #     url_env: TELEGRAM_APPRISE_URL
-  #   - id: email_main
-  #     backend: apprise
-  #     url_env: EMAIL_APPRISE_URL
-  #   - id: line_main
-  #     backend: line
-  #     token_env: LINE_CHANNEL_ACCESS_TOKEN
-  #     recipient_env: LINE_TO
+  channels:
+    - id: telegram_main
+      backend: apprise
+      url_env: TELEGRAM_APPRISE_URL
+    - id: line_main
+      backend: line
+      token_env: LINE_CHANNEL_ACCESS_TOKEN
+      recipient_env: LINE_TO
 
 # 日誌設定
 logging:
