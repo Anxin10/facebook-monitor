@@ -9,12 +9,14 @@
 1. 執行 `powershell -File scripts/setup-background.ps1` 安裝 Python 依賴並確認 Windows 已安裝 Edge。
 2. 編輯 `config.yaml` 的目標與通知管道，通知憑證放在 `.env`。
 3. 執行 `.venv\Scripts\python.exe -X utf8 main.py login`，自行登入後回終端機按 Enter。只有此指令會開可見瀏覽器。
-4. 雙擊 `start-background.vbs`，無視窗啟動；每輪共用一個分頁，完成後釋放瀏覽器。
+4. **開機自動靜默常駐（推薦）**：執行 `powershell -File scripts/setup-task-scheduler.ps1` 註冊 Windows 工作排程器，登入自動背景隱藏執行，零彈窗干擾。亦可雙擊 `start-background.vbs` 立即無視窗啟動。
 5. 執行 `.venv\Scripts\python.exe -X utf8 main.py status` 查看基準及健康狀態。
 6. 首次成功觀察不通知。確認目標已有基準後，執行 `.venv\Scripts\python.exe -X utf8 main.py enable 你的粉專ID`。
-7. 要停止時雙擊 `stop-background.vbs`。正在處理的請求需等到完成或逾時。
+7. 要停止時雙擊 `stop-background.vbs` 或執行 `powershell -File scripts/setup-task-scheduler.ps1 -Uninstall`。
 
-完整操作：[BROWSER_SETUP.md](BROWSER_SETUP.md)。架構與限制：[facebook-monitor-design.md](facebook-monitor-design.md)。
+完整背景安裝操作：[BROWSER_SETUP.md](BROWSER_SETUP.md)
+GitHub Actions 雲端排程與搭配說明：[GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md)
+架構設計與邊界：[facebook-monitor-design.md](facebook-monitor-design.md)
 
 目前規劃是先驗收單一粉專的真實登入、讀取與通知，再量測連續背景運行的資源負擔；這些實機步驟尚未由自動測試代替。
 

@@ -1,0 +1,61 @@
+name: Scheduled Facebook Monitor
+
+on:
+  schedule:
+    # 預設每 30 分鐘執行一次（可依需求調整 Cron 表達式）
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵觸發
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: |
+          python -m playwright install --with-deps chromium --no-shell
+
+      - name: Restore SQLite Database Cache
+        uses: actions/cache@v4
+        with:
+          path: monitor.sqlite3
+          key: fb-monitor-db-${{ github.ref }}-${{ github.run_number }}
+          restore-keys: |
+            fb-monitor-db-${{ github.ref }}-
+            fb-monitor-db-
+
+      - name: Run observation check
+        env:
+          TELEGRAM_APPRISE_URL: ${{ secrets.TELEGRAM_APPRISE_URL }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_TO: ${{ secrets.LINE_TO }}
+          DISCORD_APPRISE_URL: ${{ secrets.DISCORD_APPRISE_URL }}
+          EMAIL_APPRISE_URL: ${{ secrets.EMAIL_APPRISE_URL }}
+        run: |
+          # 執行單輪無頭讀取與通知發送
+          python -X utf8 main.py check
+
+      - name: Upload log artifact on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-logs
+          path: |
+            .runtime.local/monitor.log
+            monitor.sqlite3
+          retention-days: 7

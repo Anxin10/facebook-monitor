@@ -428,6 +428,36 @@ class TestNotifier(unittest.TestCase):
         # 應該包含格式化後的時間
         self.assertIn("發布時間", message)
 
+    def test_send_pending_apprise_direct_url(self):
+        """測試 Apprise 支援直接在設定檔使用 url"""
+        from notifier import Notifier
+
+        config = {
+            "storage": {"database": self.db_path},
+            "notifications": {
+                "timezone": "Asia/Taipei",
+                "channels": [
+                    {
+                        "id": "telegram_direct",
+                        "backend": "apprise",
+                        "url": "tgram://test_token/test_chat",
+                    }
+                ],
+            },
+        }
+        self._add_notification("telegram_direct", "apprise")
+
+        with patch("notifier.apprise.Apprise") as mock_apprise_class:
+            mock_ap = Mock()
+            mock_ap.notify.return_value = True
+            mock_apprise_class.return_value = mock_ap
+
+            notifier = Notifier(config, self.logger)
+            notifier.send_pending()
+
+            mock_ap.add.assert_called_once_with("tgram://test_token/test_chat")
+            mock_ap.notify.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

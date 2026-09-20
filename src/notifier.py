@@ -19,6 +19,7 @@ try:
 except ImportError:
     APPRISE_AVAILABLE = False
 
+
 from src.database import get_pending_notifications, update_notification_status
 
 
@@ -129,13 +130,15 @@ class Notifier:
             return
 
         url_env = channel_config.get("url_env")
-        if not url_env:
-            self.logger.error(f"Apprise 管道缺少 url_env 設定")
-            return
+        apprise_url = channel_config.get("url")
+        if not apprise_url and url_env:
+            apprise_url = os.getenv(url_env)
 
-        apprise_url = os.getenv(url_env)
         if not apprise_url:
-            self.logger.error(f"環境變數 {url_env} 未設定")
+            if url_env:
+                self.logger.error(f"環境變數 {url_env} 未設定")
+            else:
+                self.logger.error("Apprise 管道缺少 url 或 url_env 設定")
             return
 
         # 建立 Apprise 物件
